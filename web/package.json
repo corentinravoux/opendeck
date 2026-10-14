@@ -1,0 +1,21 @@
+{
+  "name": "opendeck-web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:runtime": "vite build --config vite.runtime.config.ts",
+    "build": "npm run build:runtime",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "katex": "0.16.22"
+  },
+  "devDependencies": {
+    "@types/katex": "0.16.7",
+    "jsdom": "26.1.0",
+    "typescript": "5.8.3",
+    "vite": "6.3.5",
+    "vitest": "3.2.4"
+  }
+}

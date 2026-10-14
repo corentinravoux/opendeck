@@ -1,0 +1,116 @@
+/* Layout of a deck page. Our own rules; the values follow the black-box measurements in
+   theme/measured/ (see CLEANROOM.md). */
+
+.reveal {
+  position: relative;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.reveal .slides {
+  position: absolute;
+  box-sizing: border-box;
+  width: var(--od-w, 1024px);
+  height: var(--od-h, 576px);
+  transform-origin: 0 0;
+}
+
+.reveal .slides > section {
+  position: absolute;
+  inset: 0;
+  box-sizing: border-box;
+  width: var(--od-w, 1024px);
+  height: var(--od-h, 576px);
+  display: none;
+  overflow: hidden;
+  text-align: center;
+}
+
+.reveal .slides > section.od-current { display: block; }
+
+.sl-block {
+  position: absolute;
+  display: block;
+  box-sizing: border-box;
+}
+
+.sl-block .sl-block-style,
+.sl-block .sl-block-content {
+  position: relative;
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+}
+
+.sl-block[data-block-type="text"] .sl-block-content { word-wrap: break-word; }
+
+/* image: stretched to the block, clipped */
+.sl-block[data-block-type="image"] .sl-block-content { overflow: hidden; }
+.sl-block[data-block-type="image"] .sl-block-content > img {
+  position: relative;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  vertical-align: top;
+  margin: 0;
+}
+
+/* shape: SVG overflows by 1 px each side so strokes are not cut */
+.sl-block[data-block-type="shape"] .sl-block-content { line-height: 0; }
+.sl-block[data-block-type="shape"] .sl-block-content > svg {
+  box-sizing: content-box;
+  overflow: hidden;
+  margin: -1px 0 0 -1px;
+  padding: 1px;
+  vertical-align: top;
+}
+
+.sl-block[data-block-type="line"] .sl-block-content > svg,
+.sl-block[data-block-type="drawing"] .sl-block-content > svg {
+  display: block;
+  overflow: visible;
+}
+.sl-block[data-block-type="drawing"] .sl-block-content > svg { width: 100%; height: 100%; }
+
+/* math: block shrinks to the typeset formula */
+.sl-block[data-block-type="math"] .sl-block-content { line-height: 1.4; }
+.sl-block .math-input { display: none; }
+.sl-block .math-output { display: block; width: max-content; }
+.sl-block .math-output .katex-display { margin: 0; }
+
+/* group: children keep absolute slide coordinates */
+.sl-block[data-block-type="group"] { width: 1px; height: 1px; }
+
+.sl-block[data-flip-x="true"] .sl-block-content { transform: scaleX(-1); }
+.sl-block[data-flip-y="true"] .sl-block-content { transform: scaleY(-1); }
+.sl-block[data-flip-x="true"][data-flip-y="true"] .sl-block-content { transform: scale(-1, -1); }
+
+/* slide number */
+.od-slide-number {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  z-index: 30;
+  padding: 5px;
+  font-family: Helvetica, Arial, sans-serif;
+  font-size: 12px;
+  line-height: 1;
+  color: #111;
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* viewer page */
+html.od-root, html.od-root body { margin: 0; height: 100%; }
+html.od-view .reveal { width: 100vw; height: 100vh; }
+
+/* print: one page per slide */
+html.od-print, html.od-print body { height: auto; overflow: visible; }
+html.od-print .reveal { overflow: visible; }
+html.od-print .reveal .slides { position: static; transform: none !important; height: auto; }
+html.od-print .reveal .slides > section {
+  display: block;
+  position: relative;
+  break-after: page;
+}
+html.od-print .reveal .slides > section[data-visibility="hidden"] { display: none; }

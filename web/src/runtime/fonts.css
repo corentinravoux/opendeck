@@ -1,0 +1,50 @@
+/* The exact font releases slides.com decks were made with, identified from the fonts embedded
+   in slides.com PDFs: Open Sans 1.10 and Montserrat 2.001. Same metrics, same line breaks.
+   Sources (licences next to the files in web/fonts-legacy/):
+     Open Sans 1.10 (Apache 2.0)  github.com/google/fonts @90abd17b4f apache/opensans/
+     Montserrat 2.001 (OFL 1.1)   github.com/JulietaUla/Montserrat @v2.001 fonts/
+   The Open Sans *-kern.ttf files are derived by tools/fix_kerning.py: the published files keep
+   their kerning in a malformed legacy kern table that Chrome drops; the rebuild moves the
+   same pairs into GPOS so text kerns exactly as in slides.com decks.                       */
+@font-face {
+  font-family: "Open Sans";
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url("../../fonts-legacy/OpenSans-Regular-kern.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Open Sans";
+  font-style: italic;
+  font-weight: 400;
+  font-display: block;
+  src: url("../../fonts-legacy/OpenSans-Italic-kern.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Open Sans";
+  font-style: normal;
+  font-weight: 700;
+  font-display: block;
+  src: url("../../fonts-legacy/OpenSans-Bold-kern.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Open Sans";
+  font-style: italic;
+  font-weight: 700;
+  font-display: block;
+  src: url("../../fonts-legacy/OpenSans-BoldItalic-kern.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Montserrat";
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url("../../fonts-legacy/Montserrat-Regular.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Montserrat";
+  font-style: normal;
+  font-weight: 700;
+  font-display: block;
+  src: url("../../fonts-legacy/Montserrat-Bold.ttf") format("truetype");
+}
