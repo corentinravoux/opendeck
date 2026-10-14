@@ -1,3 +1,15 @@
+/* Extra choices offered in the editor's font picker (OFL, from @fontsource). */
+@import "@fontsource/lato/latin-400.css";
+@import "@fontsource/lato/latin-ext-400.css";
+@import "@fontsource/lato/latin-400-italic.css";
+@import "@fontsource/lato/latin-700.css";
+@import "@fontsource/lato/latin-ext-700.css";
+@import "@fontsource/merriweather/latin-400.css";
+@import "@fontsource/merriweather/latin-ext-400.css";
+@import "@fontsource/merriweather/latin-400-italic.css";
+@import "@fontsource/merriweather/latin-700.css";
+@import "@fontsource/merriweather/latin-ext-700.css";
+
 /* The exact font releases slides.com decks were made with, identified from the fonts embedded
    in slides.com PDFs: Open Sans 1.10 and Montserrat 2.001. Same metrics, same line breaks.
    Sources (licences next to the files in web/fonts-legacy/):

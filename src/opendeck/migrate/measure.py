@@ -18,7 +18,7 @@ PROPS = [
     "margin-top", "margin-right", "margin-bottom", "margin-left", "padding-top", "padding-left",
     "list-style-type", "list-style-position", "text-transform", "text-decoration-line", "vertical-align",
     "text-align", "word-wrap", "white-space", "background-color", "border-left-width", "border-left-style",
-    "border-left-color", "display", "quotes", "font-variant-ligatures", "text-rendering", "font-kerning",
+    "border-left-color", "display", "quotes", "font-variant-ligatures", "text-rendering", "font-kerning", "word-break", "overflow-wrap", "max-width", "hyphens",
 ]
 
 PROBE_HTML = """

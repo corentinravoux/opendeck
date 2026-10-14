@@ -95,16 +95,50 @@ def _export(args) -> int:
             sys.exit(f"{target} exists (use --overwrite)")
         print(export_pdf(deck, target))
     else:
-        from .export.html import export_html
+        from .export.html import export_html, export_single
 
-        print(export_html(deck, out, name, as_zip=args.zip, overwrite=args.overwrite))
+        if args.single:
+            print(export_single(deck, out, name, overwrite=args.overwrite))
+        else:
+            print(export_html(deck, out, name, as_zip=args.zip, overwrite=args.overwrite))
+    return 0
+
+
+def _serve(args) -> int:
+    import time
+    import webbrowser
+
+    from .server.thread import ServerThread
+
+    server = ServerThread(load(), port=args.port).start()
+    print(f"opendeck at {server.url}  (Ctrl+C to stop)")
+    if args.browser:
+        webbrowser.open(server.url)
+    try:
+        while server.thread.is_alive():
+            time.sleep(0.5)
+    except KeyboardInterrupt:
+        server.stop()
+    return 0
+
+
+def _gui(args) -> int:
+    from .shell.window import run
+
+    return run(load(), deck=getattr(args, "deck", None))
+
+
+def _install_desktop(args) -> int:
+    from .shell.desktop import install_desktop_entry
+
+    print(install_desktop_entry())
     return 0
 
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="opendeck", description="Local, offline slide decks.")
     parser.add_argument("--version", action="version", version=f"opendeck {__version__}")
-    sub = parser.add_subparsers(dest="command", required=True)
+    sub = parser.add_subparsers(dest="command")
 
     migrate = sub.add_parser("migrate", help="move decks out of slides.com").add_subparsers(
         dest="step", required=True)
@@ -147,6 +181,7 @@ def main(argv: list[str] | None = None) -> None:
     ex.add_argument("--out", type=Path, required=True, help="destination folder (inside export_root)")
     ex.add_argument("--name", help="file or folder name (default: the deck folder name)")
     ex.add_argument("--zip", action="store_true", help="html: write one .zip instead of a folder")
+    ex.add_argument("--single", action="store_true", help="html: one self-contained .html file (images inlined)")
     ex.add_argument("--overwrite", action="store_true")
     ex.set_defaults(func=_export)
 
@@ -155,7 +190,19 @@ def main(argv: list[str] | None = None) -> None:
     rg.add_argument("--out", type=Path, help="report folder (default: <decks_root>/_reports/regress-YYYYMMDD)")
     rg.set_defaults(func=_regress)
 
+    sv = sub.add_parser("serve", help="run the editor server only (open it in a browser)")
+    sv.add_argument("--port", type=int, default=0, help="port on 127.0.0.1 (default: any free port)")
+    sv.add_argument("--browser", action="store_true", help="open the default browser on it")
+    sv.set_defaults(func=_serve)
+    op = sub.add_parser("open", help="open the editor window (the default with no command)")
+    op.add_argument("deck", nargs="?", help="deck folder name to open directly")
+    op.set_defaults(func=_gui)
+
+    sub.add_parser("install-desktop", help="add opendeck to the application menu").set_defaults(func=_install_desktop)
+
     args = parser.parse_args(argv)
+    if args.command is None:
+        args.func = _gui
     if getattr(args, "only", None):
         args.exclude = [s for s in args.exclude if s not in args.only]
     sys.exit(args.func(args))

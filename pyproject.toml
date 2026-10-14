@@ -13,6 +13,12 @@ authors = [{ name = "Corentin Ravoux" }]
 requires-python = ">=3.11"
 dependencies = [
     "playwright>=1.55,<2",
+    "starlette>=1.0,<2",
+    "uvicorn>=0.30",
+    "PySide6>=6.8",
+    "pillow>=10",
+    "numpy>=1.26",
+    "scipy>=1.11",
 ]
 keywords = ["slides", "presentation", "reveal.js", "katex", "offline", "editor"]
 classifiers = [

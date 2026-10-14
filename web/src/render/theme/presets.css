@@ -18,9 +18,9 @@
 .theme-font-montserrat .sl-block-content u { text-decoration-line: underline; }
 .theme-font-montserrat .sl-block-content sub { font-size: 0.8333em; vertical-align: sub; }
 .theme-font-montserrat .sl-block-content sup { font-size: 0.8333em; vertical-align: super; }
-.theme-font-montserrat .sl-block-content ul { font-weight: 400; font-style: normal; margin: 0.25em 0 0.25em 1.5em; padding: 0 0 0 0; list-style-type: disc; display: inline-block; text-align: left; }
-.theme-font-montserrat .sl-block-content ul ul { font-weight: 400; font-style: normal; margin: 0.25em 0 0.25em 1.5em; padding: 0 0 0 0; list-style-type: square; display: block; }
-.theme-font-montserrat .sl-block-content ol { font-weight: 400; font-style: normal; margin: 0.25em 0 0.25em 1.5em; padding: 0 0 0 0; list-style-type: decimal; display: inline-block; text-align: left; }
+.theme-font-montserrat .sl-block-content ul { font-weight: 400; font-style: normal; margin: 0.25em 0 0.25em 1.5em; padding: 0 0 0 0; list-style-type: disc; display: inline-block; max-width: 100%; text-align: left; }
+.theme-font-montserrat .sl-block-content ul ul { font-weight: 400; font-style: normal; margin: 0.25em 0 0.25em 1.5em; padding: 0 0 0 0; list-style-type: square; display: block; max-width: 100%; }
+.theme-font-montserrat .sl-block-content ol { font-weight: 400; font-style: normal; margin: 0.25em 0 0.25em 1.5em; padding: 0 0 0 0; list-style-type: decimal; display: inline-block; max-width: 100%; text-align: left; }
 .theme-font-montserrat .sl-block-content li { font-weight: 400; font-style: normal; margin: 0 0 0 0; padding: 0 0 0 0; }
 .theme-font-montserrat .sl-block-content blockquote { font-weight: 400; font-style: italic; margin: 0.25em 0 0.25em 0; padding: 0 0 0 0; }
 .theme-font-montserrat .sl-block-content pre { font-family: Courier, monospace; font-weight: 400; font-style: normal; line-height: 1.2; margin: 0.25em 0 0 0; padding: 0 0 0 0; text-align: left; }

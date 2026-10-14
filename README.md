@@ -8,9 +8,31 @@ Free local HTML slide editor, in the spirit of slides.com — https://github.com
 - **Images:** an image dropped or pasted onto a slide is saved into the deck's folder.
 - **Export:** HTML and PDF.
 
-Status: **pre-alpha.** The slides.com migration tools, the importer, the deck runtime and
-the PDF and HTML exports exist; the editor does not yet. The clean-room rules are in
-[CLEANROOM.md](CLEANROOM.md).
+Status: **alpha.** The clean-room rules are in [CLEANROOM.md](CLEANROOM.md).
+
+## Using it
+
+`opendeck` opens the editor window (`opendeck install-desktop` adds it to the application menu);
+`opendeck serve --browser` opens the same editor in your browser.
+
+- **Decks:** every deck in your decks folder, by year. Edits save automatically; Ctrl+S also
+  records a version in the history (History panel: view or restore any version).
+- **Blocks:** click, Shift-click or drag a frame to select; drag to move (with alignment guides),
+  handles to resize and rotate; arrow keys nudge; Ctrl+D duplicates; Ctrl+G groups; Ctrl+O shows
+  the layers.
+- **Text:** double-click to type. The toolbar sets font, size, colour, bold/italic/…, lists,
+  alignment and links; the right-hand panel sets them for a whole block. Inline maths: `\( … \)`.
+- **Maths:** double-click a maths block and type LaTeX; it renders as you type (KaTeX).
+- **Images:** drop or paste them onto a slide, or pick from the images of all your decks. Each
+  image is saved into the deck's `media/` folder. The right-hand panel crops them.
+- **Lines, arrows, drawing:** L, A and P, then drag on the slide.
+- **Slides:** new, duplicate, delete, drag to reorder. Copy blocks or slides (Ctrl+C) and paste
+  them into another deck (Ctrl+V): their images come along.
+- **Zoom:** `+`, `−`, `0` (fit), or Ctrl + mouse wheel.
+- **Deck:** click its title to rename it; the bin icon moves it to `.trash/` in your decks folder.
+  Alt+Shift+H edits the current slide's HTML.
+- **Export:** PDF, HTML folder, HTML zip or one self-contained HTML file, into any folder below
+  your export root.
 
 ## Install
 
@@ -63,7 +85,7 @@ slidescom_user = ""                               # only for `opendeck migrate f
 
 ```bash
 opendeck export pdf  <deck> --out <folder below export_root>
-opendeck export html <deck> --out <folder below export_root> [--zip]
+opendeck export html <deck> --out <folder below export_root> [--zip | --single]
 ```
 
 ## Tests

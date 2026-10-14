@@ -28,7 +28,7 @@ def export_page(slug: str = "demo-deck", deck_id: int = 42) -> str:
 	<head><meta charset="utf-8"><title>Démo deck</title><link rel="stylesheet" type="text/css" href="lib/offline-v2.css"></head>
 	<body class="reveal-viewport theme-font-montserrat theme-color-white-blue">
 		<div class="reveal">
-			<div class="slides">{SLIDES}</div>
+			<div class="slides">{SLIDES.replace("demo-deck/", slug + "/")}</div>
 		</div>
 		<script>
 			var SLConfig = {json.dumps(sl)};

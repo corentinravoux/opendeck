@@ -31,7 +31,11 @@
   "quotes": "auto",
   "font-variant-ligatures": "normal",
   "text-rendering": "optimizelegibility",
-  "font-kerning": "auto"
+  "font-kerning": "auto",
+  "word-break": "normal",
+  "overflow-wrap": "normal",
+  "max-width": "none",
+  "hyphens": "manual"
  },
  "section": {
   "font-family": "\"Open Sans\", sans-serif",
@@ -63,7 +67,11 @@
   "quotes": "auto",
   "font-variant-ligatures": "normal",
   "text-rendering": "optimizelegibility",
-  "font-kerning": "auto"
+  "font-kerning": "auto",
+  "word-break": "normal",
+  "overflow-wrap": "normal",
+  "max-width": "none",
+  "hyphens": "manual"
  },
  "slide_number": [
   {
@@ -99,6 +107,10 @@
     "font-variant-ligatures": "normal",
     "text-rendering": "optimizelegibility",
     "font-kerning": "auto",
+    "word-break": "normal",
+    "overflow-wrap": "normal",
+    "max-width": "none",
+    "hyphens": "manual",
     "position": "absolute",
     "right": "8px",
     "bottom": "8px",
@@ -144,7 +156,11 @@
    "quotes": "auto",
    "font-variant-ligatures": "normal",
    "text-rendering": "optimizelegibility",
-   "font-kerning": "auto"
+   "font-kerning": "auto",
+   "word-break": "normal",
+   "overflow-wrap": "break-word",
+   "max-width": "none",
+   "hyphens": "manual"
   },
   "image": {
    "font-family": "\"Open Sans\", sans-serif",
@@ -176,7 +192,11 @@
    "quotes": "auto",
    "font-variant-ligatures": "normal",
    "text-rendering": "optimizelegibility",
-   "font-kerning": "auto"
+   "font-kerning": "auto",
+   "word-break": "normal",
+   "overflow-wrap": "break-word",
+   "max-width": "none",
+   "hyphens": "manual"
   },
   "line": {
    "font-family": "\"Open Sans\", sans-serif",
@@ -208,7 +228,11 @@
    "quotes": "auto",
    "font-variant-ligatures": "normal",
    "text-rendering": "optimizelegibility",
-   "font-kerning": "auto"
+   "font-kerning": "auto",
+   "word-break": "normal",
+   "overflow-wrap": "break-word",
+   "max-width": "none",
+   "hyphens": "manual"
   },
   "shape": {
    "font-family": "\"Open Sans\", sans-serif",
@@ -240,7 +264,11 @@
    "quotes": "auto",
    "font-variant-ligatures": "normal",
    "text-rendering": "optimizelegibility",
-   "font-kerning": "auto"
+   "font-kerning": "auto",
+   "word-break": "normal",
+   "overflow-wrap": "break-word",
+   "max-width": "none",
+   "hyphens": "manual"
   },
   "math": {
    "font-family": "KaTeX_Main, \"Times New Roman\", serif",
@@ -272,7 +300,11 @@
    "quotes": "auto",
    "font-variant-ligatures": "normal",
    "text-rendering": "optimizelegibility",
-   "font-kerning": "auto"
+   "font-kerning": "auto",
+   "word-break": "normal",
+   "overflow-wrap": "break-word",
+   "max-width": "none",
+   "hyphens": "manual"
   },
   "drawing": {
    "font-family": "\"Open Sans\", sans-serif",
@@ -304,7 +336,11 @@
    "quotes": "auto",
    "font-variant-ligatures": "normal",
    "text-rendering": "optimizelegibility",
-   "font-kerning": "auto"
+   "font-kerning": "auto",
+   "word-break": "normal",
+   "overflow-wrap": "break-word",
+   "max-width": "none",
+   "hyphens": "manual"
   },
   "group": {
    "font-family": "\"Open Sans\", sans-serif",
@@ -336,7 +372,11 @@
    "quotes": "auto",
    "font-variant-ligatures": "normal",
    "text-rendering": "optimizelegibility",
-   "font-kerning": "auto"
+   "font-kerning": "auto",
+   "word-break": "normal",
+   "overflow-wrap": "break-word",
+   "max-width": "none",
+   "hyphens": "manual"
   }
  },
  "probe_content": {
@@ -369,7 +409,11 @@
   "quotes": "auto",
   "font-variant-ligatures": "normal",
   "text-rendering": "optimizelegibility",
-  "font-kerning": "auto"
+  "font-kerning": "auto",
+  "word-break": "normal",
+  "overflow-wrap": "break-word",
+  "max-width": "none",
+  "hyphens": "manual"
  },
  "tags": {
   "h1": {
@@ -402,7 +446,11 @@
    "quotes": "auto",
    "font-variant-ligatures": "normal",
    "text-rendering": "optimizelegibility",
-   "font-kerning": "auto"
+   "font-kerning": "auto",
+   "word-break": "normal",
+   "overflow-wrap": "break-word",
+   "max-width": "none",
+   "hyphens": "manual"
   },
   "h2": {
    "font-family": "Montserrat, Helvetica, sans-serif",
@@ -434,7 +482,11 @@
    "quotes": "auto",
    "font-variant-ligatures": "normal",
    "text-rendering": "optimizelegibility",
-   "font-kerning": "auto"
+   "font-kerning": "auto",
+   "word-break": "normal",
+   "overflow-wrap": "break-word",
+   "max-width": "none",
+   "hyphens": "manual"
   },
   "h3": {
    "font-family": "Montserrat, Helvetica, sans-serif",
@@ -466,7 +518,11 @@
    "quotes": "auto",
    "font-variant-ligatures": "normal",
    "text-rendering": "optimizelegibility",
-   "font-kerning": "auto"
+   "font-kerning": "auto",
+   "word-break": "normal",
+   "overflow-wrap": "break-word",
+   "max-width": "none",
+   "hyphens": "manual"
   },
   "h4": {
    "font-family": "Montserrat, Helvetica, sans-serif",
@@ -498,7 +554,11 @@
    "quotes": "auto",
    "font-variant-ligatures": "normal",
    "text-rendering": "optimizelegibility",
-   "font-kerning": "auto"
+   "font-kerning": "auto",
+   "word-break": "normal",
+   "overflow-wrap": "break-word",
+   "max-width": "none",
+   "hyphens": "manual"
   },
   "h5": {
    "font-family": "Montserrat, Helvetica, sans-serif",
@@ -530,7 +590,11 @@
    "quotes": "auto",
    "font-variant-ligatures": "normal",
    "text-rendering": "optimizelegibility",
-   "font-kerning": "auto"
+   "font-kerning": "auto",
+   "word-break": "normal",
+   "overflow-wrap": "break-word",
+   "max-width": "none",
+   "hyphens": "manual"
   },
   "h6": {
    "font-family": "Montserrat, Helvetica, sans-serif",
@@ -562,7 +626,11 @@
    "quotes": "auto",
    "font-variant-ligatures": "normal",
    "text-rendering": "optimizelegibility",
-   "font-kerning": "auto"
+   "font-kerning": "auto",
+   "word-break": "normal",
+   "overflow-wrap": "break-word",
+   "max-width": "none",
+   "hyphens": "manual"
   },
   "p": {
    "font-family": "\"Open Sans\", sans-serif",
@@ -594,7 +662,11 @@
    "quotes": "auto",
    "font-variant-ligatures": "normal",
    "text-rendering": "optimizelegibility",
-   "font-kerning": "auto"
+   "font-kerning": "auto",
+   "word-break": "normal",
+   "overflow-wrap": "break-word",
+   "max-width": "none",
+   "hyphens": "manual"
   },
   "a": {
    "font-family": "\"Open Sans\", sans-serif",
@@ -626,7 +698,11 @@
    "quotes": "auto",
    "font-variant-ligatures": "normal",
    "text-rendering": "optimizelegibility",
-   "font-kerning": "auto"
+   "font-kerning": "auto",
+   "word-break": "normal",
+   "overflow-wrap": "break-word",
+   "max-width": "none",
+   "hyphens": "manual"
   },
   "code": {
    "font-family": "Courier, monospace",
@@ -658,7 +734,11 @@
    "quotes": "auto",
    "font-variant-ligatures": "normal",
    "text-rendering": "optimizelegibility",
-   "font-kerning": "auto"
+   "font-kerning": "auto",
+   "word-break": "normal",
+   "overflow-wrap": "break-word",
+   "max-width": "none",
+   "hyphens": "manual"
   },
   "strong": {
    "font-family": "\"Open Sans\", sans-serif",
@@ -690,7 +770,11 @@
    "quotes": "auto",
    "font-variant-ligatures": "normal",
    "text-rendering": "optimizelegibility",
-   "font-kerning": "auto"
+   "font-kerning": "auto",
+   "word-break": "normal",
+   "overflow-wrap": "break-word",
+   "max-width": "none",
+   "hyphens": "manual"
   },
   "em": {
    "font-family": "\"Open Sans\", sans-serif",
@@ -722,7 +806,11 @@
    "quotes": "auto",
    "font-variant-ligatures": "normal",
    "text-rendering": "optimizelegibility",
-   "font-kerning": "auto"
+   "font-kerning": "auto",
+   "word-break": "normal",
+   "overflow-wrap": "break-word",
+   "max-width": "none",
+   "hyphens": "manual"
   },
   "s": {
    "font-family": "\"Open Sans\", sans-serif",
@@ -754,7 +842,11 @@
    "quotes": "auto",
    "font-variant-ligatures": "normal",
    "text-rendering": "optimizelegibility",
-   "font-kerning": "auto"
+   "font-kerning": "auto",
+   "word-break": "normal",
+   "overflow-wrap": "break-word",
+   "max-width": "none",
+   "hyphens": "manual"
   },
   "u": {
    "font-family": "\"Open Sans\", sans-serif",
@@ -786,7 +878,11 @@
    "quotes": "auto",
    "font-variant-ligatures": "normal",
    "text-rendering": "optimizelegibility",
-   "font-kerning": "auto"
+   "font-kerning": "auto",
+   "word-break": "normal",
+   "overflow-wrap": "break-word",
+   "max-width": "none",
+   "hyphens": "manual"
   },
   "sub": {
    "font-family": "\"Open Sans\", sans-serif",
@@ -818,7 +914,11 @@
    "quotes": "auto",
    "font-variant-ligatures": "normal",
    "text-rendering": "optimizelegibility",
-   "font-kerning": "auto"
+   "font-kerning": "auto",
+   "word-break": "normal",
+   "overflow-wrap": "break-word",
+   "max-width": "none",
+   "hyphens": "manual"
   },
   "sup": {
    "font-family": "\"Open Sans\", sans-serif",
@@ -850,7 +950,11 @@
    "quotes": "auto",
    "font-variant-ligatures": "normal",
    "text-rendering": "optimizelegibility",
-   "font-kerning": "auto"
+   "font-kerning": "auto",
+   "word-break": "normal",
+   "overflow-wrap": "break-word",
+   "max-width": "none",
+   "hyphens": "manual"
   },
   "ul": {
    "font-family": "\"Open Sans\", sans-serif",
@@ -882,7 +986,11 @@
    "quotes": "auto",
    "font-variant-ligatures": "normal",
    "text-rendering": "optimizelegibility",
-   "font-kerning": "auto"
+   "font-kerning": "auto",
+   "word-break": "normal",
+   "overflow-wrap": "break-word",
+   "max-width": "100%",
+   "hyphens": "manual"
   },
   "ul>li": {
    "font-family": "\"Open Sans\", sans-serif",
@@ -914,7 +1022,11 @@
    "quotes": "auto",
    "font-variant-ligatures": "normal",
    "text-rendering": "optimizelegibility",
-   "font-kerning": "auto"
+   "font-kerning": "auto",
+   "word-break": "normal",
+   "overflow-wrap": "break-word",
+   "max-width": "none",
+   "hyphens": "manual"
   },
   "ul>li::marker": {
    "font-family": "\"Open Sans\", sans-serif",
@@ -946,7 +1058,11 @@
    "quotes": "auto",
    "font-variant-ligatures": "normal",
    "text-rendering": "optimizelegibility",
-   "font-kerning": "auto"
+   "font-kerning": "auto",
+   "word-break": "normal",
+   "overflow-wrap": "break-word",
+   "max-width": "none",
+   "hyphens": "manual"
   },
   "ul ul": {
    "font-family": "\"Open Sans\", sans-serif",
@@ -978,7 +1094,11 @@
    "quotes": "auto",
    "font-variant-ligatures": "normal",
    "text-rendering": "optimizelegibility",
-   "font-kerning": "auto"
+   "font-kerning": "auto",
+   "word-break": "normal",
+   "overflow-wrap": "break-word",
+   "max-width": "100%",
+   "hyphens": "manual"
   },
   "ul ul>li": {
    "font-family": "\"Open Sans\", sans-serif",
@@ -1010,7 +1130,11 @@
    "quotes": "auto",
    "font-variant-ligatures": "normal",
    "text-rendering": "optimizelegibility",
-   "font-kerning": "auto"
+   "font-kerning": "auto",
+   "word-break": "normal",
+   "overflow-wrap": "break-word",
+   "max-width": "none",
+   "hyphens": "manual"
   },
   "ul ul>li::marker": {
    "font-family": "\"Open Sans\", sans-serif",
@@ -1042,7 +1166,11 @@
    "quotes": "auto",
    "font-variant-ligatures": "normal",
    "text-rendering": "optimizelegibility",
-   "font-kerning": "auto"
+   "font-kerning": "auto",
+   "word-break": "normal",
+   "overflow-wrap": "break-word",
+   "max-width": "none",
+   "hyphens": "manual"
   },
   "ol": {
    "font-family": "\"Open Sans\", sans-serif",
@@ -1074,7 +1202,11 @@
    "quotes": "auto",
    "font-variant-ligatures": "normal",
    "text-rendering": "optimizelegibility",
-   "font-kerning": "auto"
+   "font-kerning": "auto",
+   "word-break": "normal",
+   "overflow-wrap": "break-word",
+   "max-width": "100%",
+   "hyphens": "manual"
   },
   "ol>li": {
    "font-family": "\"Open Sans\", sans-serif",
@@ -1106,7 +1238,11 @@
    "quotes": "auto",
    "font-variant-ligatures": "normal",
    "text-rendering": "optimizelegibility",
-   "font-kerning": "auto"
+   "font-kerning": "auto",
+   "word-break": "normal",
+   "overflow-wrap": "break-word",
+   "max-width": "none",
+   "hyphens": "manual"
   },
   "ol>li::marker": {
    "font-family": "\"Open Sans\", sans-serif",
@@ -1138,7 +1274,11 @@
    "quotes": "auto",
    "font-variant-ligatures": "normal",
    "text-rendering": "optimizelegibility",
-   "font-kerning": "auto"
+   "font-kerning": "auto",
+   "word-break": "normal",
+   "overflow-wrap": "break-word",
+   "max-width": "none",
+   "hyphens": "manual"
   },
   "blockquote": {
    "font-family": "\"Open Sans\", sans-serif",
@@ -1170,7 +1310,11 @@
    "quotes": "auto",
    "font-variant-ligatures": "normal",
    "text-rendering": "optimizelegibility",
-   "font-kerning": "auto"
+   "font-kerning": "auto",
+   "word-break": "normal",
+   "overflow-wrap": "break-word",
+   "max-width": "none",
+   "hyphens": "manual"
   },
   "pre": {
    "font-family": "Courier, monospace",
@@ -1202,7 +1346,11 @@
    "quotes": "auto",
    "font-variant-ligatures": "normal",
    "text-rendering": "optimizelegibility",
-   "font-kerning": "auto"
+   "font-kerning": "auto",
+   "word-break": "normal",
+   "overflow-wrap": "break-word",
+   "max-width": "none",
+   "hyphens": "manual"
   }
  },
  "edges": {
@@ -1274,7 +1422,11 @@
    "quotes": "auto",
    "font-variant-ligatures": "normal",
    "text-rendering": "optimizelegibility",
-   "font-kerning": "auto"
+   "font-kerning": "auto",
+   "word-break": "normal",
+   "overflow-wrap": "normal",
+   "max-width": "none",
+   "hyphens": "manual"
   },
   "content": {
    "font-family": "KaTeX_Main, \"Times New Roman\", serif",
@@ -1306,7 +1458,11 @@
    "quotes": "auto",
    "font-variant-ligatures": "normal",
    "text-rendering": "optimizelegibility",
-   "font-kerning": "auto"
+   "font-kerning": "auto",
+   "word-break": "normal",
+   "overflow-wrap": "break-word",
+   "max-width": "none",
+   "hyphens": "manual"
   },
   "katex": {
    "font-family": "KaTeX_Main, \"Times New Roman\", serif",
@@ -1338,7 +1494,11 @@
    "quotes": "auto",
    "font-variant-ligatures": "normal",
    "text-rendering": "auto",
-   "font-kerning": "auto"
+   "font-kerning": "auto",
+   "word-break": "normal",
+   "overflow-wrap": "break-word",
+   "max-width": "none",
+   "hyphens": "manual"
   },
   "content_inline_font_size": "60%",
   "display": true,

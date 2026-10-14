@@ -8,6 +8,7 @@ import tempfile
 from pathlib import Path
 
 MEDIA_DIR = "media"
+IMAGE_TYPES = {"png", "jpg", "gif", "webp", "svg", "avif"}
 HASH_CHARS = 20
 _ALIASES = {"jpeg": "jpg", "jpe": "jpg", "tif": "tiff"}
 
@@ -56,3 +57,82 @@ def store(deck_dir: Path, data: bytes, name: str = "") -> tuple[str, bool]:
         Path(tmp).unlink(missing_ok=True)
         raise
     return rel, False
+
+
+def dimensions(path: Path) -> tuple[int | None, int | None]:
+    """Pixel size of an image file (None for unreadable or vector files without a size)."""
+    if path.suffix == ".svg":
+        import re
+
+        head = path.read_text(encoding="utf-8", errors="replace")[:4096]
+        vb = re.search(r'viewBox="\s*[-\d.]+[\s,]+[-\d.]+[\s,]+([\d.]+)[\s,]+([\d.]+)"', head)
+        return (round(float(vb.group(1))), round(float(vb.group(2)))) if vb else (None, None)
+    try:
+        from PIL import Image
+
+        with Image.open(path) as img:
+            return img.size
+    except Exception:
+        return None, None
+
+
+_REL = __import__("re").compile(r"^media/[A-Za-z0-9_.-]+$")
+
+
+def copy_between(src_deck: Path, dst_deck: Path, rels: list[str]) -> list[str]:
+    """Bring media files referenced by pasted content from one deck into another.
+
+    Names are content hashes, so the same name means the same bytes: an existing file is kept.
+    Hard links are used when both decks are on one filesystem, a copy otherwise. Returns the
+    paths copied; refuses anything that is not a plain media/<file> path.
+    """
+    import shutil
+
+    done = []
+    (dst_deck / MEDIA_DIR).mkdir(parents=True, exist_ok=True)
+    for rel in dict.fromkeys(rels):
+        if not _REL.match(rel):
+            raise ValueError(f"not a media path: {rel!r}")
+        src, dst = src_deck / rel, dst_deck / rel
+        if dst.exists() or not src.is_file():
+            continue
+        try:
+            os.link(src, dst)
+        except OSError:
+            shutil.copyfile(src, dst)
+        done.append(rel)
+    return done
+
+
+def library(decks_root: Path, titles: dict[str, str]) -> list[dict]:
+    """Every image of every deck, newest deck first: {deck, title, src, bytes}."""
+    out = []
+    for deck in sorted((d for d in decks_root.iterdir() if d.is_dir() and not d.name.startswith(("_", "."))), reverse=True):
+        folder = deck / MEDIA_DIR
+        if not folder.is_dir():
+            continue
+        for f in sorted(folder.iterdir()):
+            if f.is_file() and f.suffix.lstrip(".") in IMAGE_TYPES:
+                out.append({"deck": deck.name, "title": titles.get(deck.name, deck.name),
+                            "src": f"{MEDIA_DIR}/{f.name}", "bytes": f.stat().st_size})
+    return out
+
+
+def thumbnail(src: Path, cache: Path, width: int) -> Path:
+    """A cached WebP thumbnail of an image, at most `width` px wide (SVGs are served as they are)."""
+    if src.suffix == ".svg":
+        return src
+    cache.mkdir(parents=True, exist_ok=True)
+    target = cache / f"{src.stem}-{width}.webp"
+    if target.exists():
+        return target
+    from PIL import Image
+
+    with Image.open(src) as img:
+        img.seek(0)
+        img = img.convert("RGBA") if img.mode in ("P", "LA", "RGBA") else img.convert("RGB")
+        img.thumbnail((width, width * 4))
+        tmp = target.with_suffix(".tmp")
+        img.save(tmp, "WEBP", quality=80)
+    os.replace(tmp, target)
+    return target

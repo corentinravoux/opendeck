@@ -4,15 +4,24 @@
   "type": "module",
   "scripts": {
     "build:runtime": "vite build --config vite.runtime.config.ts",
-    "build": "npm run build:runtime",
+    "build": "npm run build:runtime && npm run build:app",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build:app": "vite build --config vite.app.config.ts"
   },
   "dependencies": {
-    "katex": "0.16.22"
+    "@fontsource/atkinson-hyperlegible": "5.3.0",
+    "@fontsource/lato": "5.3.0",
+    "@fontsource/merriweather": "5.3.0",
+    "@preact/signals": "2.2.1",
+    "immer": "10.1.1",
+    "katex": "0.16.22",
+    "perfect-freehand": "1.2.2",
+    "preact": "10.26.9"
   },
   "devDependencies": {
     "@types/katex": "0.16.7",
+    "@types/node": "20.17.50",
     "jsdom": "26.1.0",
     "typescript": "5.8.3",
     "vite": "6.3.5",

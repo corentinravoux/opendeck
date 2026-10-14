@@ -88,6 +88,8 @@ def font_rules(font: str, m: dict) -> list[str]:
             decl.append(f"letter-spacing: {em(px(s['letter-spacing']) / size)}")
         if probe in ("ul", "ul ul", "ol") or (not inline and s["display"] not in ("block", "list-item")):
             decl.append(f"display: {s['display']}")  # nested lists must not inherit the outer rule
+        if not inline and s.get("max-width", "none") != "none":
+            decl.append(f"max-width: {s['max-width']}")  # caps inline-block lists so long words break
         if not inline and s["text-align"] != p["text-align"]:
             decl.append(f"text-align: {s['text-align']}")
         if not decl:

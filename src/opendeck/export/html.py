@@ -56,3 +56,36 @@ def export_html(deck_dir: Path, out_dir: Path, name: str, as_zip: bool = False, 
         shutil.rmtree(staging, ignore_errors=True)
         raise
     return target
+
+
+_MIME = {"png": "image/png", "jpg": "image/jpeg", "gif": "image/gif", "webp": "image/webp", "svg": "image/svg+xml",
+         "avif": "image/avif", "woff2": "font/woff2", "woff": "font/woff", "ttf": "font/ttf"}
+
+
+def _data_uri(path: Path) -> str:
+    import base64
+
+    mime = _MIME.get(path.suffix.lstrip(".").lower(), "application/octet-stream")
+    return f"data:{mime};base64,{base64.b64encode(path.read_bytes()).decode()}"
+
+
+def export_single(deck_dir: Path, out_dir: Path, name: str, overwrite: bool = False) -> Path:
+    """One self-contained <name>.html: CSS, fonts, script and images inlined (it can be large)."""
+    runtime.install(deck_dir)
+    target = out_dir / f"{name}.html"
+    if target.exists() and not overwrite:
+        raise FileExistsError(f"{target} exists (use overwrite)")
+    lib = deck_dir / "lib"
+    css = (lib / "opendeck.css").read_text(encoding="utf-8")
+    css = re.sub(r"url\((\./)?fonts/([^)]+)\)",
+                 lambda m: f"url({_data_uri(lib / 'fonts' / m.group(2))})" if (lib / "fonts" / m.group(2)).is_file() else m.group(0), css)
+    js = (lib / "opendeck.js").read_text(encoding="utf-8").replace("</script", "<\\/script")
+    page = (deck_dir / "index.html").read_text(encoding="utf-8")
+    page = page.replace('<link rel="stylesheet" href="lib/opendeck.css">', f"<style>\n{css}\n</style>", 1)
+    page = page.replace('<script src="lib/opendeck.js"></script>', f"<script>\n{js}\n</script>", 1)
+    page = _MEDIA_REF.sub(lambda m: _data_uri(deck_dir / m.group(0)) if (deck_dir / m.group(0)).is_file() else m.group(0), page)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    tmp = target.with_name(f".{target.name}.part")
+    tmp.write_text(page, encoding="utf-8")
+    os.replace(tmp, target)
+    return target

@@ -64,3 +64,15 @@ def test_export_pdf_pages_and_size(deck, tmp_path):
     assert "768 x 432 pts" in info
     text = subprocess.run(["pdftotext", str(out), "-"], capture_output=True, text=True, check=True).stdout
     assert "Croissance" in text
+
+
+@needs_build
+def test_export_single_file_is_self_contained(deck, tmp_path):
+    from opendeck.export.html import export_single
+
+    out = export_single(deck, tmp_path / "Exports é", "talk")
+    page = out.read_text(encoding="utf-8")
+    assert out.name == "talk.html"
+    assert 'src="media/' not in page and "lib/opendeck" not in page
+    assert "data:image/png;base64," in page and "data:font/ttf;base64," in page
+    assert page.count("<script") == 2  # metadata + inlined runtime
