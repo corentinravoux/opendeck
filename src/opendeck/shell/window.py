@@ -17,6 +17,8 @@ from ..config import Config
 from ..server.host import Host
 from ..server.thread import ServerThread
 
+ICON = Path(__file__).with_name("opendeck.svg")
+
 
 def run(config: Config, deck: str | None = None) -> int:
     if os.environ.get("OPENDECK_DEVTOOLS"):
@@ -101,7 +103,7 @@ def run(config: Config, deck: str | None = None) -> int:
 
     window = Window()
     window.setWindowTitle("opendeck")
-    window.setWindowIcon(QIcon.fromTheme("x-office-presentation"))
+    window.setWindowIcon(QIcon(str(ICON)))
     host = QtHost(window)
     server = ServerThread(config, host).start()
 

@@ -11,6 +11,7 @@ from pathlib import Path
 
 from . import runtime
 
+# any quoted media path: src, poster, data-print, data-background-image, url(...)
 _MEDIA_REF = re.compile(r"""(?<=["'(])media/[A-Za-z0-9_.-]+(?=["')])""")
 
 
@@ -59,7 +60,8 @@ def export_html(deck_dir: Path, out_dir: Path, name: str, as_zip: bool = False, 
 
 
 _MIME = {"png": "image/png", "jpg": "image/jpeg", "gif": "image/gif", "webp": "image/webp", "svg": "image/svg+xml",
-         "avif": "image/avif", "woff2": "font/woff2", "woff": "font/woff", "ttf": "font/ttf"}
+         "avif": "image/avif", "webm": "video/webm", "mp4": "video/mp4",
+         "woff2": "font/woff2", "woff": "font/woff", "ttf": "font/ttf"}
 
 
 def _data_uri(path: Path) -> str:
@@ -70,7 +72,8 @@ def _data_uri(path: Path) -> str:
 
 
 def export_single(deck_dir: Path, out_dir: Path, name: str, overwrite: bool = False) -> Path:
-    """One self-contained <name>.html: CSS, fonts, script and images inlined (it can be large)."""
+    """One self-contained <name>.html: CSS, fonts, script, images and videos inlined (it can be large:
+    every video is in it, base64-encoded, along with its poster and print images)."""
     runtime.install(deck_dir)
     target = out_dir / f"{name}.html"
     if target.exists() and not overwrite:

@@ -85,3 +85,16 @@ def test_real_examples(decks_root, name, slides, images):
     # every text block's inner HTML survives byte for byte
     texts = re.findall(r'data-block-type="text".*?<div class="sl-block-content"[^>]*>(.*?)</div></div>', original)
     assert texts and all(t in page for t in texts)
+
+
+def test_unlazy_and_report_cover_video():
+    from opendeck.importer.slidescom import ImportReport, _inspect, _unlazy_images
+
+    region = ('<section><div class="sl-block" data-block-type="video" data-block-id="v"><div class="sl-block-content">'
+              '<video data-src="media/a.webm" poster="media/a.png" data-print="media/b.png"><source data-src="media/a.mp4">'
+              '</video></div></div></section>')
+    out = _unlazy_images(region)
+    assert 'src="media/a.webm"' in out and '<source src="media/a.mp4">' in out and "data-src" not in out
+    report = ImportReport(folder="x")
+    _inspect(region.replace("media/b.png", "deck/b.png"), report)
+    assert report.missing_refs == ["deck/b.png"]  # data-print is a media reference too

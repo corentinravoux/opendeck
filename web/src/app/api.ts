@@ -10,6 +10,8 @@ export interface DeckInfo {
   theme_font: string;
   theme_color: string;
   first: string;
+  /** only when publishing is configured (publish_remote): whether the deck is published */
+  public?: boolean;
 }
 
 export interface DeckMeta {
@@ -52,7 +54,11 @@ async function call<T>(method: string, url: string, body?: unknown): Promise<T> 
   }
   const res = await fetch(url, init);
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error((data as { error?: string }).error ?? `${res.status} ${res.statusText}`);
+  if (!res.ok) {
+    const { error, moved } = data as { error?: string; moved?: string };
+    // `moved`: the deck was renamed (by another window); this is its new name
+    throw Object.assign(new Error(error ?? `${res.status} ${res.statusText}`), { moved });
+  }
   return data as T;
 }
 
@@ -62,6 +68,10 @@ export const api = {
   health: () => call<Health>("GET", "/api/health"),
   decks: () => call<DeckInfo[]>("GET", "/api/decks"),
   deck: (name: string) => call<Deck>("GET", `/api/decks/${enc(name)}`),
+  /** New title; the folder follows it (YYYY-MM_<slug>). Returns the deck's (new) name. */
+  setVisibility: (name: string, isPublic: boolean) =>
+    call<{ name: string; public: boolean }>("POST", `/api/decks/${enc(name)}/visibility`, { public: isPublic }),
+  renameDeck: (name: string, title: string) => call<{ name: string; etag: string }>("POST", `/api/decks/${enc(name)}/rename`, { title }),
   exports: (name: string) => call<RememberedExport[]>("GET", `/api/decks/${enc(name)}/exports`),
   exportDeck: (name: string, body: { kind: string; dir: string; name: string; zip: boolean; single?: boolean; overwrite: boolean }) =>
     call<{ path: string }>("POST", `/api/decks/${enc(name)}/export`, body),

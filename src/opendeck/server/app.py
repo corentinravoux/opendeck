@@ -22,7 +22,7 @@ from starlette.staticfiles import StaticFiles
 
 from .. import __version__, paths
 from ..config import Config
-from ..deck import media, store, versioning
+from ..deck import media, publish, store, versioning
 from ..export import runtime
 from .host import Host
 
@@ -51,7 +51,9 @@ def error(status: int, message: str) -> JSONResponse:
 
 def create_app(config: Config, host: Host | None = None, allowed_hosts: set[str] | None = None) -> Starlette:
     host = host or Host()
+    versioning.MIRROR_MEDIA = config.mirror_media
     historian = store.Historian(config.mirror_root)
+    moved: dict[str, str] = {}  # old deck name -> new one, for windows still open on the old name
 
     def deck_or_error(request: Request) -> tuple[Path, None] | tuple[None, JSONResponse]:
         try:
@@ -59,6 +61,13 @@ def create_app(config: Config, host: Host | None = None, allowed_hosts: set[str]
         except ValueError as exc:
             return None, error(400, str(exc))
         except FileNotFoundError as exc:
+            name, seen = request.path_params["name"], set()
+            while name in moved and name not in seen:
+                seen.add(name)
+                name = moved[name]
+            if seen and (config.decks_root / name / "index.html").is_file():
+                return None, JSONResponse({"error": f"this deck was renamed: it is now {name}", "moved": name},
+                                          status_code=404)
             return None, error(404, str(exc))
 
     async def health(request: Request):
@@ -66,7 +75,27 @@ def create_app(config: Config, host: Host | None = None, allowed_hosts: set[str]
                              "export_root": str(config.export_root)})
 
     async def decks(request: Request):
-        return JSONResponse(store.as_dicts(await run_in_threadpool(store.list_decks, config.decks_root)))
+        out = store.as_dicts(await run_in_threadpool(store.list_decks, config.decks_root))
+        if config.publishing:
+            public = set(publish.public_decks(config.mirror_root))
+            for d in out:
+                d["public"] = d["name"] in public and publish.included(d["name"], config.publish_exclude)
+        return JSONResponse(out)
+
+    async def publishing(request: Request):
+        return JSONResponse({"enabled": config.publishing})
+
+    async def visibility(request: Request):
+        d, err = deck_or_error(request)
+        if d is None:
+            return err
+        if not config.publishing:
+            return error(404, "publishing is not configured (publish_remote)")
+        public = bool((await request.json()).get("public"))
+        if public and not publish.included(d.name, config.publish_exclude):
+            return error(409, f"{d.name} is in publish_exclude: it is never published")
+        await run_in_threadpool(publish.set_public, config.mirror_root, d.name, public)
+        return JSONResponse({"name": d.name, "public": public})
 
     async def new_deck(request: Request):
         body = await request.json()
@@ -87,6 +116,10 @@ def create_app(config: Config, host: Host | None = None, allowed_hosts: set[str]
             return error(400, "the copy needs a title")
         new = await run_in_threadpool(store.duplicate, config.decks_root, d, title)
         await run_in_threadpool(versioning.commit, config.mirror_root, new, f"{new.name}: copy of {d.name}")
+        # a new deck is private; a copy takes the visibility of its original
+        if (config.publishing and d.name in publish.public_decks(config.mirror_root)
+                and publish.included(new.name, config.publish_exclude)):
+            await run_in_threadpool(publish.set_public, config.mirror_root, new.name, True)
         return JSONResponse({"name": new.name})
 
     async def deck(request: Request):
@@ -110,6 +143,35 @@ def create_app(config: Config, host: Host | None = None, allowed_hosts: set[str]
         committed = await run_in_threadpool(historian.saved, d, time.time(), bool(body.get("commit")))
         return JSONResponse({"etag": new_etag, "committed": committed})
 
+    async def rename_deck(request: Request):
+        d, err = deck_or_error(request)
+        if d is None:
+            return err
+        body = await request.json()
+        title = str(body.get("title", "")).strip()
+        if not title:
+            return error(400, "the deck needs a title")
+        old = d.name
+
+        def run() -> Path:
+            historian.commit(old, time.time())  # edits not yet recorded go in under the old name
+            new = store.rename(config.decks_root, d, title, config.mirror_root)
+            historian.renamed(old, new)
+            if config.publishing and new.name != old:
+                publish.set_public(config.mirror_root, old, True, rename_to=new.name)   # a public deck stays public
+            return new
+
+        try:
+            new = await run_in_threadpool(run)
+        except ValueError as exc:
+            return error(400, str(exc))
+        except FileExistsError as exc:
+            return error(409, str(exc))
+        if new.name != old:
+            moved[old] = new.name
+            moved.pop(new.name, None)
+        return JSONResponse({"name": new.name, "etag": store.etag((new / "index.html").read_text(encoding="utf-8"))})
+
     async def remove(request: Request):
         d, err = deck_or_error(request)
         if d is None:
@@ -130,8 +192,8 @@ def create_app(config: Config, host: Host | None = None, allowed_hosts: set[str]
         from urllib.parse import unquote
 
         name = unquote(request.headers.get("x-filename", ""))
-        if media.sniff(data, name) not in media.IMAGE_TYPES:
-            return error(415, "not an image (png, jpg, gif, webp, svg, avif)")
+        if media.sniff(data, name) not in media.IMAGE_TYPES | media.VIDEO_TYPES:
+            return error(415, "not an image or a video (png, jpg, gif, webp, svg, avif, webm, mp4)")
         rel, existed = await run_in_threadpool(media.store, d, data, name)
         width, height = await run_in_threadpool(media.dimensions, d / rel)
         return JSONResponse({"src": rel, "width": width, "height": height, "deduped": existed})
@@ -289,6 +351,9 @@ def create_app(config: Config, host: Host | None = None, allowed_hosts: set[str]
             return error(404, "not found")
         return FileResponse(target)
 
+    async def favicon(request: Request):
+        return FileResponse(Path(__file__).resolve().parents[1] / "shell" / "opendeck.svg", media_type="image/svg+xml")
+
     async def app_index(request: Request):
         index = WEB / "index.html"
         if not index.is_file():
@@ -303,6 +368,9 @@ def create_app(config: Config, host: Host | None = None, allowed_hosts: set[str]
         Route("/api/decks/{name}", save, methods=["PUT"]),
         Route("/api/decks/{name}", remove, methods=["DELETE"]),
         Route("/api/decks/{name}/duplicate", duplicate_deck, methods=["POST"]),
+        Route("/api/decks/{name}/rename", rename_deck, methods=["POST"]),
+        Route("/api/decks/{name}/visibility", visibility, methods=["POST"]),
+        Route("/api/publishing", publishing),
         Route("/api/decks/{name}/media", upload, methods=["POST"]),
         Route("/api/decks/{name}/media/copy", media_copy, methods=["POST"]),
         Route("/api/decks/{name}/exports", exports),
@@ -318,6 +386,7 @@ def create_app(config: Config, host: Host | None = None, allowed_hosts: set[str]
         Route("/view/{name}/", view),
         Route("/view/{name}/{path:path}", view),
         Route("/", app_index),
+        Route("/favicon.svg", favicon),
         Route("/favicon.ico", lambda request: PlainTextResponse("", status_code=204)),
     ]
     if (WEB / "assets").is_dir():

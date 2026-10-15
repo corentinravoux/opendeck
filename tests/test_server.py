@@ -76,6 +76,19 @@ def test_upload_saves_into_deck_media(env):
     assert client.post(f"/api/decks/{name}/media", content=b"not an image", headers=W).status_code == 415
 
 
+def test_upload_accepts_videos(env):
+    client, config, name, _ = env
+    webm = b"\x1a\x45\xdf\xa3" + b"\x00" * 64
+    r = client.post(f"/api/decks/{name}/media", content=webm, headers=W | {"content-type": "video/webm", "x-filename": "hdr_A.webm"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["src"].startswith("media/") and body["src"].endswith(".webm")
+    assert body["width"] is None and body["height"] is None
+    served = client.get(f"/view/{name}/{body['src']}", headers={"range": "bytes=0-3"})
+    assert served.status_code == 206 and served.content == webm[:4]  # seeking needs range requests
+    assert served.headers["content-type"] == "video/webm"
+
+
 def test_view_serves_deck_files_only(env):
     client, _, name, _ = env
     page = client.get(f"/view/{name}/")
@@ -246,3 +259,29 @@ def test_rename_and_trash(env):
     assert gone.status_code == 200 and not (config.decks_root / name).exists()
     assert list((config.decks_root / ".trash").iterdir())[0].name.startswith(name)
     assert client.get("/api/decks").json() == []
+
+
+def test_rename_deck_endpoint(env):
+    client, config, name, _ = env
+    deck = client.get(f"/api/decks/{name}").json()
+    # an edit still pending in the Historian is recorded before the folder moves
+    client.put(f"/api/decks/{name}", headers=W, json={"slides": deck["slides"], "etag": deck["etag"], "commit": True})
+    deck = client.get(f"/api/decks/{name}").json()
+    client.put(f"/api/decks/{name}", headers=W, json={"slides": deck["slides"].replace("Croissance", "Pending"), "etag": deck["etag"]})
+    assert client.post(f"/api/decks/{name}/rename", json={"title": "x"}).status_code == 403  # needs X-Opendeck
+    assert client.post(f"/api/decks/{name}/rename", headers=W, json={"title": " "}).status_code == 400
+    assert client.post(f"/api/decks/{name}/rename", headers=W, json={"title": "???"}).status_code == 400
+    r = client.post(f"/api/decks/{name}/rename", headers=W, json={"title": "Renommé: v2"})
+    assert r.status_code == 200, r.text
+    new = r.json()["name"]
+    assert new == f"{name[:7]}_renomme-v2" and not (config.decks_root / name).exists()
+    got = client.get(f"/api/decks/{new}").json()
+    assert got["meta"]["title"] == "Renommé: v2" and got["etag"] == r.json()["etag"] and "Pending" in got["slides"]
+    messages = [v["message"] for v in client.get(f"/api/decks/{new}/history").json()]
+    assert messages == [f"{name} -> {new}: rename", f"{name}: edit", f"{name}: edit"]
+    # a window still open on the old name is told where the deck went
+    old = client.get(f"/api/decks/{name}")
+    assert old.status_code == 404 and old.json()["moved"] == new
+    stale = client.put(f"/api/decks/{name}", headers=W, json={"slides": got["slides"], "etag": got["etag"]})
+    assert stale.status_code == 404 and stale.json()["moved"] == new
+    assert client.post("/api/decks/nope/rename", headers=W, json={"title": "x"}).status_code == 404

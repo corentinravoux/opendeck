@@ -3,7 +3,7 @@ import type { ComponentChildren } from "preact";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { attr, contentScale, findBlock, frame, groupBlocks, lineEnds, lineSpec, mathTex, rotation, setContentScale, setFrame,
   setLine, setMathTex, setRotation, setShape, setSlideAttr, shapeSpec, ungroupBlock,
-  imageCrop, setImageCrop, opacity, setOpacity } from "../model/ops";
+  imageCrop, setImageCrop, opacity, setOpacity, setVideo, videoSpec } from "../model/ops";
 import { SHAPES } from "../render/shape";
 import { serializeDoc } from "../model/serialize";
 import { getStyle, setAttr, setStyle } from "../model/style";
@@ -11,6 +11,7 @@ import type { Block } from "../model/types";
 import { Icon, type IconName } from "../app/icons";
 import { FONTS, deckColours } from "./fonts";
 import { Palette } from "./Palette";
+import { pickFile, upload } from "./media";
 import type { Editor } from "./store";
 
 /** A number field. `prefix` puts a short label inside the field (X, Y, W, H). */
@@ -86,6 +87,29 @@ function Segmented({ label, value, options, onChange }: {
   );
 }
 
+/** An image of a block chosen from disk (video poster, print still): its name, Choose, and clear. */
+function ImageField({ label, value, deck, onPick, onError }: {
+  label: string; value: string | null; deck: string; onPick: (src: string | null) => void; onError: (msg: string) => void;
+}) {
+  const choose = async () => {
+    const file = await pickFile("image/*");
+    if (!file) return;
+    try { onPick((await upload(deck, file, file.name)).src); } catch (err) { onError(`${file.name}: ${(err as Error).message}`); }
+  };
+  return (
+    <div class="od-num od-colour">
+      <span>{label}</span>
+      <span class="od-colour-ctl">
+        <button class="od-swatch-btn" aria-label={`${label}: choose an image`} title={value ?? undefined} onClick={() => void choose()}>
+          <code>{value ? value.replace(/^media\//, "").slice(0, 14) : "Choose…"}</code>
+        </button>
+        {value && <button class="od-clear" aria-label={`No ${label.toLowerCase()}`} data-tip={`No ${label.toLowerCase()}`}
+          onClick={() => onPick(null)}><Icon name="close" size={12} /></button>}
+      </span>
+    </div>
+  );
+}
+
 function Section({ title, children }: { title?: string; children: ComponentChildren }) {
   return <section class="od-section">{title && <h4>{title}</h4>}{children}</section>;
 }
@@ -101,9 +125,10 @@ function Head({ icon, title, sub }: { icon: IconName; title: string; sub?: strin
 }
 
 const TYPES: Record<string, [string, IconName]> = { text: ["Text", "text"], math: ["Maths", "sigma"], image: ["Image", "image"],
+  video: ["Video", "video"],
   shape: ["Shape", "shape"], line: ["Line", "line"], drawing: ["Drawing", "pen"], group: ["Group", "group"] };
 
-const TIPS: [string, string][] = [["Double-click", "edit text or maths"], ["Drop or paste", "add an image"],
+const TIPS: [string, string][] = [["Double-click", "edit text or maths"], ["Drop or paste", "add an image or a video"],
   ["Shift-click", "select several"], ["Ctrl+G", "group"], ["Ctrl+D", "duplicate"], ["Ctrl+S", "record a version"]];
 
 export function Inspector({ editor, onEditHtml }: { editor: Editor; onEditHtml: () => void }) {
@@ -268,6 +293,32 @@ export function Inspector({ editor, onEditHtml }: { editor: Editor; onEditHtml: 
               <Num prefix label="B" value={pct(trim.bottom)} unit="%" onChange={(v) => setTrim("bottom", v)} />
             </div>
             {cropped ? <button class="od-btn wide" onClick={() => change("Remove crop", (b) => setImageCrop(b, { x: 0, y: 0, width: 1, height: 1 }))}>Remove crop</button> : null}
+          </Section>
+        );
+      })()}
+
+      {block.type === "video" && (() => {
+        const v = videoSpec(block);
+        const fail = (msg: string) => (editor.message.value = msg);
+        return (
+          <Section title="Video">
+            <ImageField label="Poster" value={v.poster} deck={editor.name} onError={fail}
+              onPick={(src) => change("Poster", (b) => setVideo(b, { poster: src }))} />
+            <ImageField label="Print image" value={v.print} deck={editor.name} onError={fail}
+              onPick={(src) => change("Print image", (b) => setVideo(b, { print: src }))} />
+            <label class="od-check">
+              <input type="checkbox" checked={v.autoplay}
+                onChange={(e) => change("Autoplay", (b) => setVideo(b, { autoplay: (e.target as HTMLInputElement).checked }))} />
+              <span class="od-switch" aria-hidden="true" />
+              <span>Play on slide<small>From the start, each time the slide is shown</small></span>
+            </label>
+            <label class="od-check">
+              <input type="checkbox" checked={v.loop}
+                onChange={(e) => change("Loop", (b) => setVideo(b, { loop: (e.target as HTMLInputElement).checked }))} />
+              <span class="od-switch" aria-hidden="true" />
+              <span>Loop<small>Off: the last frame stays on screen</small></span>
+            </label>
+            <p class="od-hint">The poster shows before playback, the print image in PDFs (the poster if none): use the clip's first and last frames.</p>
           </Section>
         );
       })()}

@@ -81,7 +81,7 @@ class ImportReport:
     features: dict[str, int] = field(default_factory=dict)
 
 
-_REF = re.compile(r"""(?:\b(?:src|data-src|data-background-image|href)=["']|url\(["']?)([^"')\s]+)""")
+_REF = re.compile(r"""(?:\b(?:src|data-src|poster|data-print|data-background-image|href)=["']|url\(["']?)([^"')\s]+)""")
 
 
 def _rewrite_media(region: str, mapping: dict[str, str]) -> str:
@@ -91,10 +91,11 @@ def _rewrite_media(region: str, mapping: dict[str, str]) -> str:
 
 
 def _unlazy_images(region: str) -> str:
+    """Lazy media (<img>, <video>, <source> with data-src) get a plain src."""
     def fix(m: re.Match) -> str:
         tag = m.group(0).replace(' data-lazy-loaded=""', "")
         return tag if re.search(r"\ssrc=", tag) else tag.replace(" data-src=", " src=", 1)
-    return re.sub(r"<img\b[^>]*>", fix, region)
+    return re.sub(r"<(?:img|video|source)\b[^>]*>", fix, region)
 
 
 def _inspect(region: str, report: ImportReport) -> None:

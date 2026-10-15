@@ -6,6 +6,13 @@ Every setting has a generic default; ~/.config/opendeck/config.toml overrides an
     export_root = "~/Documents/Slides"          # exports may only be written below this folder
     mirror_root = "~/.local/share/opendeck/history"
     slidescom_user = "your-username"            # only for `opendeck migrate fetch`
+
+Optional, off unless set: keep the media in the history mirror too, and publish decks as a website.
+
+    mirror_media = true                         # the mirror keeps each deck's media, not only index.html
+    publish_remote = "git@github.com:you/decks.git"   # enables publishing: `opendeck publish` pushes there
+    publish_title = "Talks"                     # heading of the published list of talks
+    publish_exclude = ["*_playground"]          # deck folders (glob patterns) never published, even public
 """
 
 from __future__ import annotations
@@ -25,6 +32,15 @@ class Config:
     export_root: Path = Path.home() / "Documents" / "Slides"
     mirror_root: Path = DATA_HOME / "opendeck" / "history"
     slidescom_user: str = ""
+    mirror_media: bool = False
+    publish_remote: str = ""
+    publish_title: str = "Talks"
+    publish_exclude: tuple[str, ...] = ()
+
+    @property
+    def publishing(self) -> bool:
+        """Publishing is on only when a remote is configured (decks then get a public/private switch)."""
+        return bool(self.publish_remote)
 
     @property
     def inbox(self) -> Path:
@@ -44,5 +60,18 @@ def load(path: Path = CONFIG_PATH) -> Config:
     unknown = set(data) - set(types)
     if unknown:
         raise ValueError(f"{path}: unknown keys {sorted(unknown)}; known: {sorted(types)}")
-    values = {k: (Path(v).expanduser() if types[k] == "Path" else str(v)) for k, v in data.items()}
+    def value(k, v):
+        if types[k] == "Path":
+            return Path(v).expanduser()
+        if types[k] == "bool":
+            if not isinstance(v, bool):
+                raise ValueError(f"{path}: {k} must be true or false")
+            return v
+        if types[k].startswith("tuple"):
+            if not isinstance(v, list):
+                raise ValueError(f"{path}: {k} must be a list")
+            return tuple(str(x) for x in v)
+        return str(v)
+
+    values = {k: value(k, v) for k, v in data.items()}
     return replace(config, **values)

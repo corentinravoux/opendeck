@@ -188,6 +188,55 @@ def test_drop_and_paste_images_save_into_deck_media(running):
         assert f'src="media/{f.name}"' in slides
 
 
+VIDEO_DROP_JS = """async () => {
+  const bytes = new Uint8Array([0x1a, 0x45, 0xdf, 0xa3, 0, 0, 0, 0]);
+  const dt = new DataTransfer();
+  dt.items.add(new File([bytes], 'hdr_A.webm', { type: 'video/webm' }));
+  const opts = { dataTransfer: dt, bubbles: true, cancelable: true, clientX: 300, clientY: 300 };
+  const target = document.querySelector('.od-canvas');
+  target.dispatchEvent(new DragEvent('dragover', opts));
+  target.dispatchEvent(new DragEvent('drop', opts));
+}"""
+
+
+def test_drop_video_then_set_poster_and_loop(running, tmp_path):
+    import base64
+
+    from playwright.sync_api import sync_playwright
+
+    server, deck = running
+    poster = tmp_path / "hdr_A.first.png"
+    poster.write_bytes(base64.b64decode(_png_b64((0, 200, 0))))
+    with sync_playwright() as p:
+        browser = p.chromium.launch(channel="chrome", headless=True)
+        page = browser.new_page(viewport={"width": 1400, "height": 900})
+        errors = []
+        page.on("pageerror", lambda e: errors.append(str(e)))
+        page.goto(f"{server.url}/#/deck/{deck.name}")
+        ready(page, deck.name)
+        page.locator(".od-canvas-slide .slides > section").wait_for()
+        page.evaluate(VIDEO_DROP_JS)
+        video = page.locator(".od-canvas-slide .sl-block[data-block-type=video] video")
+        video.wait_for(state="attached", timeout=5000)
+        assert video.evaluate("v => v.paused && v.preload === 'metadata'")  # the editor never plays clips
+        until(lambda: 'data-block-type="video"' in slides_of(deck))
+        # unknown size (the bytes are not a real clip): the block fills the slide
+        assert "width: 1024px; height: 576px; left: 0px; top: 0px;" in slides_of(deck)
+        page.locator(".od-inspector[aria-label=Video]").wait_for()
+        with page.expect_file_chooser() as chooser:
+            page.get_by_label("Poster: choose an image").click()
+        chooser.value.set_files(str(poster))
+        until(lambda: 'poster="media/' in slides_of(deck))
+        page.locator(".od-inspector .od-check", has_text="Loop").click()
+        until(lambda: re.search(r"<video[^>]*\sloop", slides_of(deck)) is not None)
+        page.keyboard.press("Control+o")
+        assert page.locator(".od-layer", has_text="video").count() == 1
+        assert errors == []
+        browser.close()
+    m = re.search(r'<video src="(media/[0-9a-f]+\.webm)" poster="(media/[0-9a-f]+\.png)"', slides_of(deck))
+    assert m and (deck / m.group(1)).is_file() and (deck / m.group(2)).read_bytes() == poster.read_bytes()
+
+
 def test_text_editing_in_place(running):
     from playwright.sync_api import sync_playwright
 
@@ -465,7 +514,7 @@ def test_duplicate_deck_from_the_deck_list(running):
         page.goto(f"{server.url}/")
         card = page.locator(".od-card-wrap").first
         card.hover()
-        card.locator(".od-card-actions button").click()
+        card.locator(".od-card-actions button[aria-label^=Duplicate]").click()
         title = page.locator(".od-modal input")
         assert title.input_value().endswith("(copy)")
         title.fill("Copie du séminaire")
@@ -475,4 +524,101 @@ def test_duplicate_deck_from_the_deck_list(running):
         ready(page, copy.name)
         assert slides_of(copy) == slides_of(deck)
         assert {f.name for f in (copy / "media").iterdir()} == {f.name for f in (deck / "media").iterdir()}
+        browser.close()
+
+
+def test_drag_snaps_to_alignment_guides(running):
+    from playwright.sync_api import sync_playwright
+
+    server, deck = running
+    with sync_playwright() as p:
+        browser = p.chromium.launch(channel="chrome", headless=True)
+        page = browser.new_page(viewport={"width": 1400, "height": 900})
+        errors = []
+        page.on("pageerror", lambda e: errors.append(str(e)))
+        page.goto(f"{server.url}/#/deck/{deck.name}")
+        ready(page, deck.name)
+        s = page.locator(".od-canvas-slide .slides > section").bounding_box()
+        k = s["width"] / 1024
+        image = page.locator('.od-canvas-slide .sl-block[data-block-id="i1"]')
+        b = image.bounding_box()
+
+        def drag(dx, alt=False):
+            """Drag the image by dx slide px; returns how many guides showed before the drop."""
+            x, y = b["x"] + b["width"] / 2, b["y"] + b["height"] / 2
+            page.mouse.move(x, y)
+            page.mouse.down()
+            if alt:
+                page.keyboard.down("Alt")
+            page.mouse.move(x + dx * k, y + 1, steps=10)
+            guides = page.locator(".od-guide-x").count()
+            page.mouse.up()
+            if alt:
+                page.keyboard.up("Alt")
+            assert page.locator(".od-guide").count() == 0  # hidden on drop
+            return guides
+
+        # i1 spans x 500..700; text block t1 spans x 40..640: its right edge (3 px off) catches i1's
+        assert drag(-57) >= 1
+        until(lambda: "left: 440px" in block_style(deck, "i1"))
+        page.keyboard.press("Control+z")
+        until(lambda: "left: 500px" in block_style(deck, "i1"))
+        # Alt: no snapping
+        assert drag(-57, alt=True) == 0
+        until(lambda: "left: 500px" not in block_style(deck, "i1") and "left: 440px" not in block_style(deck, "i1"))
+        page.keyboard.press("Control+z")
+        until(lambda: "left: 500px" in block_style(deck, "i1"))
+        # the header toggle turns snapping off, and the choice is remembered
+        toggle = page.locator(".od-center-head [aria-label='Snap to alignment guides']")
+        assert toggle.get_attribute("aria-pressed") == "true"
+        toggle.click()
+        assert page.evaluate("localStorage.getItem('opendeck-snap')") == "off"
+        assert drag(-57) == 0
+        until(lambda: "left: 500px" not in block_style(deck, "i1") and "left: 440px" not in block_style(deck, "i1"))
+        page.reload()
+        ready(page, deck.name)
+        assert page.locator(".od-center-head [aria-label='Snap to alignment guides']").get_attribute("aria-pressed") == "false"
+        assert errors == []
+        browser.close()
+
+
+def test_rename_deck_from_editor_and_list(running):
+    from playwright.sync_api import sync_playwright
+
+    from opendeck.deck import versioning
+
+    server, deck = running
+    versioning.commit(server.historian.mirror, deck, f"{deck.name}: import from slides.com")
+    month = deck.name[:7]
+    with sync_playwright() as p:
+        browser = p.chromium.launch(channel="chrome", headless=True)
+        page = browser.new_page(viewport={"width": 1400, "height": 900})
+        errors = []
+        page.on("pageerror", lambda e: errors.append(str(e)))
+        page.goto(f"{server.url}/#/deck/{deck.name}")
+        ready(page, deck.name)
+        # in the editor: click the title, type, Enter; the editor follows the deck to its new folder
+        page.locator(".od-deck-title").click()
+        page.locator(".od-deck-title-input").fill("Exposé Lyα")
+        page.keyboard.press("Enter")
+        new = f"{month}_expose-ly"
+        page.wait_for_function(f"location.hash === '#/deck/{new}'", timeout=10000)
+        ready(page, new)
+        assert page.locator(".od-deck-title").text_content() == "Exposé Lyα"
+        assert not deck.exists() and (deck.parent / new / "index.html").is_file()
+        page.locator(".od-tabs [aria-label=History]").click()
+        page.wait_for_function("document.querySelectorAll('.od-version').length >= 2", timeout=10000)
+
+        # from the deck list: the Rename button on a card
+        page.goto(f"{server.url}/#/")
+        card = page.locator(".od-card-wrap").first
+        card.hover()
+        card.locator(".od-card-actions button[aria-label^=Rename]").click()
+        title = page.locator(".od-modal input")
+        assert title.input_value() == "Exposé Lyα"
+        title.fill("Final talk")
+        page.locator(".od-modal button[type=submit]").click()
+        page.wait_for_function("[...document.querySelectorAll('.od-card-title')].some((e) => e.textContent === 'Final talk')", timeout=10000)
+        assert (deck.parent / f"{month}_final-talk" / "index.html").is_file() and not (deck.parent / new).exists()
+        assert errors == []
         browser.close()

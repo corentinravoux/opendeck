@@ -14,7 +14,12 @@ export function splitSections(html: string): string[] {
 /** Point relative media URLs at the deck folder (display only; never saved). */
 export function absolutiseMedia(html: string, deck: string): string {
   const base = viewUrl(deck);
-  return html.replace(/(\s(?:src|data-background-image)=")(media\/)/g, `$1${base}$2`);
+  return html.replace(/(\s(?:src|poster|data-print|data-background-image)=")(media\/)/g, `$1${base}$2`);
+}
+
+/** Videos in the editor and thumbnails show their poster (or first frame) and do not buffer the clip. */
+export function stillVideos(html: string): string {
+  return html.replace(/(<video\b[^>]*?\spreload=")[^"]*"/g, '$1metadata"');
 }
 
 /**
@@ -38,7 +43,7 @@ export function renderSlide(host: HTMLElement, sectionHtml: string, deck: string
   slides.className = "slides";
   slides.style.setProperty("--od-w", `${meta.width}px`);
   slides.style.setProperty("--od-h", `${meta.height}px`);
-  slides.innerHTML = absolutiseMedia(sectionHtml, deck);
+  slides.innerHTML = stillVideos(absolutiseMedia(sectionHtml, deck));
   const section = slides.querySelector<HTMLElement>(":scope > section");
   if (section) {
     section.classList.add("od-current");

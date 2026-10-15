@@ -128,6 +128,43 @@ def _gui(args) -> int:
     return run(load(), deck=getattr(args, "deck", None))
 
 
+def _publish(args) -> int:
+    from .deck import publish, versioning
+
+    config = load()
+    if not config.publishing and not args.no_push and not args.remote:
+        sys.exit("publishing is off: set publish_remote in the config file (or pass --remote / --no-push)")
+    versioning.MIRROR_MEDIA = config.mirror_media
+    commit, names, changed = publish.build(config.decks_root, config.mirror_root, config.publish_exclude,
+                                           config.publish_title)
+    print(f"{len(names)} decks in snapshot {commit[:7]}" + ("" if changed else " (unchanged)"))
+    remote = args.remote or config.publish_remote
+    if args.no_push or not remote:
+        print("not pushed" + ("" if remote else ": no publish_remote in the config file"))
+        return 0
+    publish.push(config.mirror_root, remote)
+    return 0
+
+
+def _visibility(args) -> int:
+    from .deck import publish
+    from .paths import deck_dir
+
+    config = load()
+    if not config.publishing:
+        sys.exit("publishing is off: set publish_remote in the config file to give decks a visibility")
+    if args.deck is None:
+        public = publish.public_decks(config.mirror_root)
+        print("\n".join(public) if public else "every deck is private")
+        return 0
+    if args.state is None:
+        sys.exit("say public or private")
+    name = deck_dir(config, args.deck).name
+    changed = publish.set_public(config.mirror_root, name, args.state == "public")
+    print(f"{name}: {args.state}" + ("" if changed else " (already)"))
+    return 0
+
+
 def _install_desktop(args) -> int:
     from .shell.desktop import install_desktop_entry
 
@@ -197,6 +234,16 @@ def main(argv: list[str] | None = None) -> None:
     op = sub.add_parser("open", help="open the editor window (the default with no command)")
     op.add_argument("deck", nargs="?", help="deck folder name to open directly")
     op.set_defaults(func=_gui)
+
+    pb = sub.add_parser("publish", help="snapshot every deck not in publish_exclude and push it to publish_remote")
+    pb.add_argument("--remote", help="git remote URL (default: publish_remote from the config file)")
+    pb.add_argument("--no-push", action="store_true", help="build the snapshot only")
+    pb.set_defaults(func=_publish)
+
+    vi = sub.add_parser("visibility", help="list the public decks, or make one public or private (default: private)")
+    vi.add_argument("deck", nargs="?", help="deck folder name")
+    vi.add_argument("state", nargs="?", choices=["public", "private"])
+    vi.set_defaults(func=_visibility)
 
     sub.add_parser("install-desktop", help="add opendeck to the application menu").set_defaults(func=_install_desktop)
 

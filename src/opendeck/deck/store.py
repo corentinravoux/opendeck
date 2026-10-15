@@ -141,12 +141,24 @@ class Historian:
         for name in list(self.pending):
             self.commit(name, now)
 
+    def renamed(self, old: str, deck: Path) -> None:
+        """Deck `old` now lives at `deck`: what was pending for it is pending under its new name."""
+        if self.pending.pop(old, None) is not None:
+            self.pending[deck.name] = deck
+        if old in self.last:
+            self.last[deck.name] = self.last.pop(old)
 
-def slugify(title: str) -> str:
+
+def _slug(title: str) -> str:
+    """The title in lowercase ASCII letters, digits and dashes; empty if nothing is left."""
     import unicodedata
 
     ascii_ = unicodedata.normalize("NFKD", title).encode("ascii", "ignore").decode()
-    return re.sub(r"[^a-z0-9]+", "-", ascii_.lower()).strip("-")[:60] or "deck"
+    return re.sub(r"[^a-z0-9]+", "-", ascii_.lower()).strip("-")[:60]
+
+
+def slugify(title: str) -> str:
+    return _slug(title) or "deck"
 
 
 def _new_folder(decks_root: Path, title: str, today: datetime | None) -> Path:
@@ -210,4 +222,57 @@ def trash(decks_root: Path, deck: Path) -> Path:
     bin_.mkdir(exist_ok=True)
     target = bin_ / f"{deck.name}_{datetime.now():%Y%m%d-%H%M%S}"
     os.replace(deck, target)
+    return target
+
+
+_MONTH = re.compile(r"^(\d{4}-\d{2})_")
+
+
+def _write_page(index: Path, page: str) -> None:
+    tmp = index.with_name(".index.html.tmp")
+    tmp.write_text(page, encoding="utf-8")
+    os.replace(tmp, index)
+
+
+def rename(decks_root: Path, deck: Path, title: str, mirror: Path | None = None) -> Path:
+    """Give `deck` a new title, and its folder the matching name: the same YYYY-MM prefix, then
+    the title's slug (-2, -3, ... when taken by another deck or by another deck's history). The
+    folder stays when the slug does not change. With `mirror`, the deck's history folder moves
+    along (git mv), so its past versions stay attached. Returns the deck's folder.
+
+    If anything fails, the deck keeps its old title and folder (and the mirror its old state)."""
+    title = title.strip()
+    slug = _slug(title)
+    if not slug:
+        raise ValueError("the title needs at least one Latin letter or digit, to name the deck's folder")
+    month = _MONTH.match(deck.name)
+    base = f"{month.group(1) if month else f'{datetime.now():%Y-%m}'}_{slug}"
+    if deck.name == base or re.fullmatch(re.escape(base) + r"-\d+", deck.name):
+        name = deck.name  # same slug: keep the folder
+    else:
+        taken = lambda n: (decks_root / n).exists() or (mirror is not None and (mirror / n).exists())
+        name, n = base, 2
+        while taken(name):
+            name, n = f"{base}-{n}", n + 1
+    target = decks_root / name
+
+    index = deck / "index.html"
+    old_page = index.read_text(encoding="utf-8")
+    meta, slides = template.read(old_page)
+    meta = DeckMeta.from_dict(meta.to_dict() | {"title": title, "format": meta.format})
+    _write_page(index, template.render(meta, slides))
+    try:
+        if target != deck:
+            os.rename(deck, target)
+            try:
+                if mirror is not None:
+                    versioning.rename(mirror, deck.name, name, target)
+            except BaseException:
+                os.rename(target, deck)
+                raise
+        elif mirror is not None and (mirror / deck.name / "index.html").is_file():
+            versioning.commit(mirror, deck, f"{deck.name}: rename")
+    except BaseException:
+        _write_page(index, old_page)
+        raise
     return target

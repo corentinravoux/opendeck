@@ -45,6 +45,9 @@ version = { attr = "opendeck.__version__" }
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+opendeck = ["_web/**/*", "shell/*.svg"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = ["examples: uses the real decks in Slides_deck/examples (skipped when absent)"]

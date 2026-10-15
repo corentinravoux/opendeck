@@ -220,14 +220,8 @@ input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
   border-bottom: 1px solid var(--line);
 }
 .od-brand { display: flex; align-items: center; gap: 10px; }
-.od-brand-mark {
-  width: 22px; height: 16px; border-radius: 4px; position: relative; flex: none;
-  background: linear-gradient(135deg, #0b1c2e, #2f8f8a); box-shadow: inset 0 0 0 1px rgba(134, 224, 180, .35);
-}
-.od-brand-mark::after { content: ""; position: absolute; right: -3px; top: -3px; width: 7px; height: 7px; border-radius: 50%;
-  background: var(--accent); box-shadow: 0 0 0 2px var(--surface); }
-.od-brand-mark.big { width: 56px; height: 40px; border-radius: 8px; }
-.od-brand-mark.big::after { width: 14px; height: 14px; right: -5px; top: -5px; }
+.od-brand-mark { width: 26px; height: 26px; flex: none; background: url(/favicon.svg) center / contain no-repeat; }
+.od-brand-mark.big { width: 72px; height: 72px; }
 .od-brand-name { font-weight: 600; font-size: 16px; letter-spacing: -.01em; }
 .od-home-actions { display: flex; justify-content: flex-end; align-items: center; gap: var(--s2); }
 
@@ -249,6 +243,7 @@ input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
 .od-card-wrap:hover .od-thumb { transform: translateY(-3px); box-shadow: 0 0 0 2px var(--accent), var(--shadow-2); }
 .od-card-wrap:hover .od-card-actions { translate: 0 -3px; }
 .od-card { display: block; text-decoration: none; color: inherit; border-radius: var(--r-box); outline-offset: 4px; }
+.od-public { display: inline-flex; align-items: center; gap: 3px; color: var(--accent); }
 .od-thumb {
   width: 100%; aspect-ratio: 16 / 9; overflow: hidden; border-radius: var(--r-thumb); position: relative;
   background: var(--surface-2); box-shadow: 0 0 0 1px var(--line), var(--shadow-1);
