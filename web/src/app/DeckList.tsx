@@ -53,19 +53,24 @@ function Card({ deck, recent = false, onDuplicate, onRename, onVisibility }: {
           {deck.public && <span class="od-public" title="Published by opendeck publish"><Icon name="globe" size={13} />Public</span>}
         </div>
       </a>
+        {deck.public !== undefined && (
+          <div class="od-card-vis">
+            <label class="od-check od-vis" title={deck.public ? "Public: on the published website. Slide to make it private."
+              : "Private: never published. Slide to make it public."}>
+              <span class={deck.public ? "" : "on"}><Icon name="lock" size={13} />Private</span>
+              <input type="checkbox" role="switch" checked={deck.public}
+                aria-label={`“${deck.title}” is ${deck.public ? "public" : "private"}`}
+                onChange={(e) => { (e.target as HTMLInputElement).checked = !!deck.public; onVisibility(deck); }} />
+              <span class="od-switch" aria-hidden="true" />
+              <span class={deck.public ? "on" : ""}><Icon name="globe" size={13} />Public</span>
+            </label>
+          </div>
+        )}
       <div class="od-card-actions">
         <button class="od-btn small" aria-label={`Duplicate “${deck.title}”`} onClick={() => onDuplicate(deck)}>
           <Icon name="copy" size={14} />Duplicate</button>
         <button class="od-btn small" aria-label={`Rename “${deck.title}”`} onClick={() => onRename(deck)}>
           <Icon name="rename" size={14} />Rename</button>
-        {deck.public !== undefined && (
-          <button class="od-btn small" aria-pressed={deck.public}
-            aria-label={deck.public ? `Make “${deck.title}” private` : `Make “${deck.title}” public`}
-            title={deck.public ? "Public: published by opendeck publish. Click to make it private."
-              : "Private: never published. Click to make it public."}
-            onClick={() => onVisibility(deck)}>
-            <Icon name={deck.public ? "globe" : "lock"} size={14} />{deck.public ? "Public" : "Private"}</button>
-        )}
       </div>
     </div>
   );

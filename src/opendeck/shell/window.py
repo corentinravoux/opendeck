@@ -74,7 +74,8 @@ def run(config: Config, deck: str | None = None) -> int:
             page.urlChanged.connect(lambda u: (QDesktopServices.openUrl(u), page.deleteLater()))
             return page
 
-    app = QApplication.instance() or QApplication(sys.argv[:1])
+    # argv[0] names the X11 window instance (WM_CLASS): "opendeck", as the desktop entry expects
+    app = QApplication.instance() or QApplication(["opendeck"])
     app.setApplicationName("opendeck")
     QGuiApplication.setDesktopFileName("opendeck")
     class Window(QMainWindow):

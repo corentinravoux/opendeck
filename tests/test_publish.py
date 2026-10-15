@@ -177,3 +177,24 @@ def test_visibility_endpoint_only_when_publishing(tmp_path):
     priv_copy = on.post(f"/api/decks/{new}/duplicate", json={"title": "Copy of private"}, headers=h).json()["name"]
     assert set(publish.public_decks(cfg.mirror_root)) == {"2024-12_renamed-talk", pub_copy}
     assert new not in publish.public_decks(cfg.mirror_root) and priv_copy not in publish.public_decks(cfg.mirror_root)
+
+
+@pytest.mark.skipif(not (runtime.BUILD / "opendeck.js").is_file(), reason="runtime not built")
+@pytest.mark.skipif(subprocess.run(["git", "lfs", "version"], capture_output=True).returncode != 0, reason="no git-lfs")
+def test_lfs_snapshot_holds_pointers_and_a_pages_workflow(tmp_path):
+    mirror, root = tmp_path / "mirror", tmp_path / "decks"
+    root.mkdir()
+    deck(root, "2024-12_talk", "A talk")
+    publish.set_public(mirror, "2024-12_talk", True)
+    plain, _, _ = publish.build(root, mirror)                       # first without LFS: plain blobs
+    blob = subprocess.run(["git", "-C", str(mirror), "show", f"{plain}:2024-12_talk/media/a.png"],
+                          check=True, capture_output=True).stdout
+    assert blob.startswith(b"\x89PNG")
+    commit, _, changed = publish.build(root, mirror, lfs=True)
+    assert changed
+    pointer = git(mirror, "show", f"{commit}:2024-12_talk/media/a.png")
+    assert pointer.startswith("version https://git-lfs.github.com/spec/v1")
+    assert "filter=lfs" in git(mirror, "show", f"{commit}:.gitattributes")
+    assert "deploy-pages" in git(mirror, "show", f"{commit}:.github/workflows/pages.yml")
+    assert "2024-12_talk/media/a.png" in git(mirror, "lfs", "ls-files", "--name-only", commit)
+    assert publish.check(mirror) == commit                          # .github is not a deck folder

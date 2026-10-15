@@ -13,6 +13,7 @@ Optional, off unless set: keep the media in the history mirror too, and publish 
     publish_remote = "git@github.com:you/decks.git"   # enables publishing: `opendeck publish` pushes there
     publish_title = "Talks"                     # heading of the published list of talks
     publish_exclude = ["*_playground"]          # deck folders (glob patterns) never published, even public
+    publish_lfs = true                          # media in Git LFS; the site is deployed by a GitHub Actions workflow
 """
 
 from __future__ import annotations
@@ -36,6 +37,7 @@ class Config:
     publish_remote: str = ""
     publish_title: str = "Talks"
     publish_exclude: tuple[str, ...] = ()
+    publish_lfs: bool = False
 
     @property
     def publishing(self) -> bool:

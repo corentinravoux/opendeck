@@ -81,7 +81,12 @@ To put some talks online as a website (for instance GitHub Pages), set a git rem
 publish_remote  = "git@github.com:you/talks.git"  # turns publishing on
 publish_title   = "Talks"                         # heading of the list of talks
 publish_exclude = ["*_playground"]                # never published, even if made public
+publish_lfs     = false                           # true: media in Git LFS (needs git-lfs)
 ```
+
+With `publish_lfs = true` the media go to Git LFS, which GitHub Pages does not serve from a
+branch: the snapshot then carries a GitHub Actions workflow that pulls them and deploys the site
+(Settings, Pages, Source: GitHub Actions). Its LFS objects are cached between deploys.
 
 Every deck is **private** until you make it public: with publishing on, each deck card in the
 list gets a Private / Public switch (or `opendeck visibility <deck> public|private`). Then:

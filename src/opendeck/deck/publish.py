@@ -36,6 +36,47 @@ BRANCH = "public"
 PUSHED = "refs/opendeck/pushed"
 STAGE = "opendeck-public"
 GITIGNORE = "publish.gitignore"
+LFS_ATTRIBUTES = "*/media/** filter=lfs diff=lfs merge=lfs -text\n"
+WORKFLOW = """# Written by opendeck: deploys this repository as a GitHub Pages site. The media are in Git LFS,
+# which Pages does not serve from a branch, so the site is built here with the LFS files pulled
+# (kept in the Actions cache between deploys, to spare the LFS bandwidth quota).
+# Repository Settings > Pages > Source: GitHub Actions.
+name: pages
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: pages
+  cancel-in-progress: true
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: List the LFS objects
+        run: git lfs ls-files --long | cut -d' ' -f1 | sort > .lfs-ids
+      - uses: actions/cache@v4
+        with:
+          path: .git/lfs/objects
+          key: lfs-${{ hashFiles('.lfs-ids') }}
+          restore-keys: lfs-
+      - name: Pull the LFS objects
+        run: git lfs pull && rm .lfs-ids
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+      - id: deployment
+        uses: actions/deploy-pages@v4
+"""
 _HEADER = """\
 # Written by opendeck. Every deck is private: no deck folder is published unless it is listed
 # below with a leading "!". opendeck changes this list only when a deck is made public or private.
@@ -148,8 +189,10 @@ a.talk:hover .title {{ color: var(--accent); }}
 
 
 def _stage(stage: Path, decks_root: Path, decks: list[store.DeckInfo], mirror_gitignore: Path,
-           title: str = "Talks") -> None:
+           title: str = "Talks", lfs: bool = False) -> None:
     keep = {d.name for d in decks} | {"index.html", ".nojekyll", "README.md", ".gitignore"}
+    if lfs:
+        keep |= {".gitattributes", ".github"}
     stage.mkdir(parents=True, exist_ok=True)
     for entry in stage.iterdir():
         if entry.name not in keep:
@@ -164,6 +207,12 @@ def _stage(stage: Path, decks_root: Path, decks: list[store.DeckInfo], mirror_gi
     (stage / "index.html").write_text(talk_index(decks, title), encoding="utf-8")
     (stage / ".nojekyll").write_text("", encoding="utf-8")
     shutil.copyfile(mirror_gitignore, stage / ".gitignore")
+    if lfs:
+        with open(stage / ".gitignore", "a", encoding="utf-8") as f:
+            f.write("# the workflow that deploys the site (media in Git LFS)\n!/.github/\n")
+        (stage / ".gitattributes").write_text(LFS_ATTRIBUTES, encoding="utf-8")
+        (stage / ".github" / "workflows").mkdir(parents=True, exist_ok=True)
+        (stage / ".github" / "workflows" / "pages.yml").write_text(WORKFLOW, encoding="utf-8")
     (stage / "README.md").write_text(
         f"# {title}\n\nSlide decks published with opendeck: "
         "each folder is one self-contained talk (`index.html`, its runtime in `lib/`, its media). "
@@ -171,7 +220,7 @@ def _stage(stage: Path, decks_root: Path, decks: list[store.DeckInfo], mirror_gi
 
 
 def build(decks_root: Path, mirror: Path, exclude: tuple[str, ...] | list[str] = (),
-          title: str = "Talks") -> tuple[str, list[str], bool]:
+          title: str = "Talks", lfs: bool = False) -> tuple[str, list[str], bool]:
     """Commit every deck to the history, then snapshot the public ones on branch `public`.
     Returns (commit, published deck names, whether the snapshot changed)."""
     all_decks = store.list_decks(decks_root)
@@ -183,10 +232,14 @@ def build(decks_root: Path, mirror: Path, exclude: tuple[str, ...] | list[str] =
     decks = [d for d in all_decks if d.name in public and included(d.name, exclude)]
     git_dir = mirror / ".git"
     stage = git_dir / STAGE
-    _stage(stage, decks_root, decks, mirror / GITIGNORE, title)
+    if lfs:
+        # the clean filter turns media into LFS pointers as they are staged; the pre-push hook uploads them
+        _git(mirror, "lfs", "install", "--local")
+    _stage(stage, decks_root, decks, mirror / GITIGNORE, title, lfs)
     env = {"GIT_INDEX_FILE": str(git_dir / f"{STAGE}.index")}
     work = ["--git-dir", str(git_dir), "--work-tree", str(stage)]
     _git(mirror, *work, "add", "-A", ".", env=env)
+    _git(mirror, *work, "add", "--renormalize", ".", env=env)   # media staged before LFS was turned on
     tree = _git(mirror, *work, "write-tree", env=env)
     prev = _git(mirror, "rev-parse", "--verify", "-q", f"refs/heads/{BRANCH}", check=False)
     if prev and _git(mirror, "rev-parse", f"{prev}^{{tree}}") == tree:
@@ -210,8 +263,9 @@ def check(mirror: Path) -> str:
     public = set(public_decks(mirror))
     commits = _git(mirror, "rev-list", tip, *([f"^{pushed}"] if pushed else [])).split()
     for c in commits:
+        # every folder but dot-folders (.github: never a deck, deck names cannot start with ".")
         folders = {line.split("\t", 1)[1] for line in _git(mirror, "ls-tree", c).splitlines()
-                   if line.split()[1] == "tree"}
+                   if line.split()[1] == "tree" and not line.split("\t", 1)[1].startswith(".")}
         private = sorted(folders - public)
         if private:
             raise PrivateDeckError(f"snapshot {c[:7]} holds decks that are not public: {', '.join(private)}")
