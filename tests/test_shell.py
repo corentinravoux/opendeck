@@ -20,7 +20,7 @@ SCRIPT = textwrap.dedent("""
     def probe():
         win = [x for x in app.topLevelWidgets() if x.isVisible()][0]
         win.centralWidget().page().runJavaScript(
-            "document.querySelector('.od-list-head h1') ? 'ok' : 'missing'", 0,
+            "document.querySelector('.od-home .od-brand-name') ? 'ok' : 'missing'", 0,
             lambda r: (print('PAGE', r), app.quit()))
     QTimer.singleShot(4000, probe)
     sys.exit(w.run(Config(decks_root=root, export_root=root.parent, mirror_root=root / "m")))

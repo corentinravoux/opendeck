@@ -77,6 +77,18 @@ def create_app(config: Config, host: Host | None = None, allowed_hosts: set[str]
         await run_in_threadpool(versioning.commit, config.mirror_root, d, f"{d.name}: new deck")
         return JSONResponse({"name": d.name})
 
+    async def duplicate_deck(request: Request):
+        d, err = deck_or_error(request)
+        if d is None:
+            return err
+        body = await request.json()
+        title = str(body.get("title", "")).strip()
+        if not title:
+            return error(400, "the copy needs a title")
+        new = await run_in_threadpool(store.duplicate, config.decks_root, d, title)
+        await run_in_threadpool(versioning.commit, config.mirror_root, new, f"{new.name}: copy of {d.name}")
+        return JSONResponse({"name": new.name})
+
     async def deck(request: Request):
         d, err = deck_or_error(request)
         if d is None:
@@ -290,6 +302,7 @@ def create_app(config: Config, host: Host | None = None, allowed_hosts: set[str]
         Route("/api/decks/{name}", deck),
         Route("/api/decks/{name}", save, methods=["PUT"]),
         Route("/api/decks/{name}", remove, methods=["DELETE"]),
+        Route("/api/decks/{name}/duplicate", duplicate_deck, methods=["POST"]),
         Route("/api/decks/{name}/media", upload, methods=["POST"]),
         Route("/api/decks/{name}/media/copy", media_copy, methods=["POST"]),
         Route("/api/decks/{name}/exports", exports),

@@ -1,4 +1,5 @@
-// A deck in the editor: icon rail, slide list, canvas, export dialog.
+// A deck in the editor, laid out like slides.com: icon rail and block palette on the left, the
+// canvas, the side panel (block settings, layers, history) and the strip of slides below.
 import { useEffect, useRef, useState } from "preact/hooks";
 import { Canvas } from "../editor/Canvas";
 import { handleKey } from "../editor/keys";
@@ -12,16 +13,19 @@ import { onCopy, onPaste } from "../editor/clipboard";
 import { addSlide, duplicateSlide, moveSlide, removeSlide } from "../model/ops";
 import { mathBlock, shapeBlock, textBlock } from "../model/factory";
 import type { Block, Slide } from "../model/types";
-import { openEditor, type Editor } from "../editor/store";
+import { openEditor, type Editor, type SaveState } from "../editor/store";
 import { slideHtml } from "../model/serialize";
-import type { Deck } from "./api";
+import { api, type Deck } from "./api";
 import { ExportDialog } from "./ExportDialog";
-import { Icon } from "./icons";
+import { Icon, type IconName } from "./icons";
 import { renderSlide } from "./slide";
+import { IconButton, Menu, ThemeToggle } from "./ui";
 
 declare global {
   interface Window { opendeckFlush?: () => Promise<boolean> }
 }
+
+const THUMB = 112;
 
 function SlideThumb({ html, deck, n, active, onClick }: {
   html: string; deck: Deck; n: number; active: boolean; onClick: () => void;
@@ -31,13 +35,13 @@ function SlideThumb({ html, deck, n, active, onClick }: {
   useEffect(() => {
     const el = ref.current!;
     if (seen.current) {
-      renderSlide(el, html, deck.name, deck.meta, 176);
+      renderSlide(el, html, deck.name, deck.meta, THUMB);
       return;
     }
     const io = new IntersectionObserver((entries) => {
       if (entries.some((e) => e.isIntersecting)) {
         seen.current = true;
-        renderSlide(el, html, deck.name, deck.meta, 176);
+        renderSlide(el, html, deck.name, deck.meta, THUMB);
         io.disconnect();
       }
     }, { rootMargin: "400px" });
@@ -45,23 +49,62 @@ function SlideThumb({ html, deck, n, active, onClick }: {
     return () => io.disconnect();
   }, [html]);
   return (
-    <button class={`od-slide-thumb${active ? " active" : ""}`} onClick={onClick} title={`Slide ${n}`}>
+    <button class={`od-slide-thumb${active ? " active" : ""}`} onClick={onClick} aria-label={`Slide ${n}`} aria-current={active}>
       <span class="od-slide-n">{n}</span>
-      <div ref={ref} class="od-slide-box" style={{ height: `${(deck.meta.height * 176) / deck.meta.width}px` }} />
+      <div ref={ref} class="od-slide-box" style={{ height: `${(deck.meta.height * THUMB) / deck.meta.width}px` }} />
     </button>
   );
 }
 
-const SAVE_LABEL = { saved: "Saved", dirty: "Unsaved changes", saving: "Saving", conflict: "Changed elsewhere: reload the deck", error: "Not saved" };
+const SAVE_LABEL: Record<SaveState, string> = { saved: "Saved", dirty: "Edited", saving: "Saving", conflict: "Changed elsewhere", error: "Not saved" };
+
+/** The deck title in the top bar: click to rename it in place. */
+function DeckTitle({ editor, name, onRenamed, editing, setEditing }: {
+  editor: Editor; name: string; onRenamed: () => void; editing: boolean; setEditing: (v: boolean) => void;
+}) {
+  const [value, setValue] = useState(editor.deck.meta.title);
+  const input = useRef<HTMLInputElement>(null);
+  useEffect(() => { if (editing) { setValue(editor.deck.meta.title); input.current?.select(); } }, [editing]);
+  const done = async (keep: boolean) => {
+    setEditing(false);
+    const t = value.trim();
+    if (keep && t && t !== editor.deck.meta.title) { await editor.setMeta({ title: t }); onRenamed(); }
+  };
+  if (editing) {
+    return (
+      <input ref={input} class="od-deck-title-input" value={value} aria-label="Deck title"
+        onInput={(e) => setValue((e.target as HTMLInputElement).value)}
+        onKeyDown={(e) => { if (e.key === "Enter") void done(true); if (e.key === "Escape") { e.stopPropagation(); void done(false); } }}
+        onBlur={() => void done(true)} />
+    );
+  }
+  return (
+    <button class="od-deck-title" title={`${name}: click to rename`} onClick={() => setEditing(true)}>{editor.deck.meta.title}</button>
+  );
+}
+
+/** A button of the block palette (icon above its label), as in slides.com. */
+function Block({ icon, label, aria, tip, on, onClick }: {
+  icon: IconName; label: string; aria: string; tip?: string; on?: boolean; onClick: () => void;
+}) {
+  return (
+    <button class={`od-block-btn${on ? " on" : ""}`} aria-label={aria} aria-pressed={on === undefined ? undefined : on}
+      data-tip={tip} onClick={onClick}>
+      <Icon name={icon} size={22} /><span>{label}</span>
+    </button>
+  );
+}
+
+type Panel = "design" | "layers" | "history";
 
 export function DeckView({ name }: { name: string }) {
   const [editor, setEditor] = useState<Editor | null>(null);
   const [error, setError] = useState("");
   const [exporting, setExporting] = useState(false);
-  const [layers, setLayers] = useState(false);
-  const [history, setHistory] = useState(false);
+  const [panel, setPanel] = useState<Panel>("design");
   const [library, setLibrary] = useState(false);
   const [htmlOpen, setHtmlOpen] = useState(false);
+  const [renaming, setRenaming] = useState(false);
   const [reloads, setReloads] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -69,7 +112,7 @@ export function DeckView({ name }: { name: string }) {
     setEditor(null); // never show (or paste into) the previous deck while this one loads
     openEditor(name).then((ed) => {
       setEditor(ed);
-      document.title = `${ed.deck.meta.title} — opendeck`;
+      document.title = `${ed.deck.meta.title} · opendeck`;
       window.opendeckFlush = async () => { await ed.save(); return ed.saveState.value === "saved"; };
     }).catch((e) => setError(String(e.message ?? e)));
     return () => { window.opendeckFlush = undefined; };
@@ -80,7 +123,7 @@ export function DeckView({ name }: { name: string }) {
     const onKey = (e: KeyboardEvent) => {
       if (exporting || library || htmlOpen) return;
       if (e.altKey && e.shiftKey && e.code === "KeyH") { editor.flushText?.(); setHtmlOpen(true); e.preventDefault(); return; }
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "o") { setLayers((v) => !v); e.preventDefault(); return; }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "o") { setPanel((p) => (p === "layers" ? "design" : "layers")); e.preventDefault(); return; }
       if (!editor.selection.value.length && !(e.target as HTMLElement).closest("input, textarea, [contenteditable=true]")) {
         const ctrl = e.ctrlKey || e.metaKey;
         if (ctrl && e.key.toLowerCase() === "d") { slideOp("dup"); e.preventDefault(); return; }
@@ -126,12 +169,13 @@ export function DeckView({ name }: { name: string }) {
 
   const current = editor?.current.value ?? 0;
   useEffect(() => {
-    listRef.current?.querySelector(".od-slide-thumb.active")?.scrollIntoView({ block: "nearest" });
+    listRef.current?.querySelector(".od-slide-thumb.active")?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }, [current]);
 
   const insert = (make: (s: Slide) => Block) => {
     if (!editor) return;
     let id = "";
+    editor.tool.value = null;
     editor.edit("Insert", (doc) => {
       const s = doc.slides[editor.current.value];
       const b = make(s);
@@ -155,7 +199,9 @@ export function DeckView({ name }: { name: string }) {
     editor.selection.value = [];
   };
   const [dragFrom, setDragFrom] = useState<number | null>(null);
+  const [dragOver, setDragOver] = useState<number | null>(null);
   const dropSlide = (to: number) => {
+    setDragOver(null);
     if (!editor || dragFrom === null || dragFrom === to) return;
     const from = dragFrom;
     editor.edit("Move slide", (doc) => moveSlide(doc, from, to));
@@ -172,81 +218,149 @@ export function DeckView({ name }: { name: string }) {
     input.click();
   };
 
-  if (error) return <p class="od-error od-muted">This deck did not open: {error}. <a href="#/">Back to all decks</a></p>;
-  if (!editor) return <p class="od-muted">Opening the deck…</p>;
+  if (error) {
+    return (
+      <div class="od-home"><div class="od-empty">
+        <Icon name="warning" size={28} />
+        <h3>This deck did not open</h3>
+        <p>{error}</p>
+        <a class="od-btn" href="#/">Back to all decks</a>
+      </div></div>
+    );
+  }
+  if (!editor) {
+    return (
+      <div class="od-editor od-loading" aria-busy="true">
+        <nav class="od-rail" />
+        <aside class="od-palette-col" />
+        <main class="od-center"><div class="od-skel od-skel-canvas" /></main>
+        <section class="od-strip">{[0, 1, 2, 3, 4, 5].map((i) => <div key={i} class="od-skel od-skel-slide" />)}</section>
+        <aside class="od-side" />
+      </div>
+    );
+  }
   const slides = editor.doc.value.slides;
   const state = editor.saveState.value;
+  const tool = editor.tool.value;
+  const setTool = (t: "line" | "arrow" | "pen") => (editor.tool.value = tool === t ? null : t);
+  const zoom = editor.zoom.value;
+  const trash = async () => {
+    if (!confirm(`Move “${editor.deck.meta.title}” to the trash? It goes to the .trash folder of your decks and can be moved back by hand.`)) return;
+    await editor.save(true);
+    const r = await fetch(`/api/decks/${encodeURIComponent(name)}`, { method: "DELETE", headers: { "X-Opendeck": "1" } });
+    if (r.ok) location.hash = "#/"; else alert(`The deck was not moved: ${(await r.json()).error}`);
+  };
+
+  const showPanel = (p: Panel) => setPanel((cur) => (cur === p && p !== "design" ? "design" : p));
 
   return (
     <div class="od-editor">
-      <nav class="od-rail" aria-label="Tools">
-        <a class="od-rail-btn" href="#/" data-tip="All decks" aria-label="All decks"><Icon name="home" /></a>
-        <button class="od-rail-btn" data-tip="Undo (Ctrl+Z)" aria-label="Undo" onClick={() => editor.undo()}><Icon name="undo" /></button>
-        <button class="od-rail-btn" data-tip="Redo (Ctrl+Y)" aria-label="Redo" onClick={() => editor.redo()}><Icon name="redo" /></button>
+      <nav class="od-rail" aria-label="Deck">
+        <a class="od-rail-btn" href="#/" data-tip="All decks" aria-label="All decks"><Icon name="decks" size={20} /></a>
+        <a class="od-rail-btn od-rail-preview" href={`/view/${encodeURIComponent(name)}/#/${current}`} target="_blank"
+          data-tip="Preview" aria-label="Preview"><Icon name="eye" size={20} /></a>
+        <button class="od-rail-btn" data-tip="Undo (Ctrl+Z)" aria-label="Undo" onClick={() => editor.undo()}><Icon name="undo" size={20} /></button>
+        <button class="od-rail-btn" data-tip="Redo (Ctrl+Y)" aria-label="Redo" onClick={() => editor.redo()}><Icon name="redo" size={20} /></button>
+        <button class={`od-rail-btn od-save od-save-${state}`} aria-label={SAVE_LABEL[state]}
+          data-tip={`${SAVE_LABEL[state]}. Ctrl+S records a version`} onClick={() => void editor.save(true)}>
+          <Icon name={state === "saved" ? "check" : state === "conflict" || state === "error" ? "warning" : "dots"} size={20} />
+        </button>
         <span class="od-rail-sep" />
-        <button class="od-rail-btn" data-tip="Text (T)" aria-label="Add text"
-          onClick={() => { insert((s) => textBlock(s, 212, 250)); editor.pendingEdit.value = editor.selection.value[0]; }}><Icon name="text" /></button>
-        <button class="od-rail-btn" data-tip="Maths" aria-label="Add maths" onClick={() => insert((s) => mathBlock(s, 412, 240))}><Icon name="sigma" /></button>
-        <button class="od-rail-btn" data-tip="Image: or drop / paste one on the slide" aria-label="Add image" onClick={pickImages}><Icon name="image" /></button>
-        <button class="od-rail-btn" data-tip="Images from your decks" aria-label="Image library" onClick={() => setLibrary(true)}><Icon name="library" /></button>
-        <button class="od-rail-btn" data-tip="Shape" aria-label="Add shape" onClick={() => insert((s) => shapeBlock(s, 412, 228))}><Icon name="shape" /></button>
-        <button class={`od-rail-btn${editor.tool.value === "line" ? " on" : ""}`} data-tip="Line (L): drag on the slide" aria-label="Draw a line"
-          aria-pressed={editor.tool.value === "line"} onClick={() => (editor.tool.value = editor.tool.value === "line" ? null : "line")}><Icon name="line" /></button>
-        <button class={`od-rail-btn${editor.tool.value === "arrow" ? " on" : ""}`} data-tip="Arrow (A): drag on the slide" aria-label="Draw an arrow"
-          aria-pressed={editor.tool.value === "arrow"} onClick={() => (editor.tool.value = editor.tool.value === "arrow" ? null : "arrow")}><Icon name="arrow" /></button>
-        <button class={`od-rail-btn${editor.tool.value === "pen" ? " on" : ""}`} data-tip="Pen (P): draw freehand, Esc to stop" aria-label="Draw freehand"
-          aria-pressed={editor.tool.value === "pen"} onClick={() => (editor.tool.value = editor.tool.value === "pen" ? null : "pen")}><Icon name="pen" /></button>
-        <span class="od-rail-sep" />
-        <button class={`od-rail-btn${history ? " on" : ""}`} data-tip="History: earlier versions" aria-label="History"
-          aria-pressed={history} onClick={() => setHistory((v) => !v)}><Icon name="history" /></button>
-        <button class={`od-rail-btn${layers ? " on" : ""}`} data-tip="Layers (Ctrl+O)" aria-label="Layers" aria-pressed={layers}
-          onClick={() => setLayers((v) => !v)}><Icon name="layers" /></button>
-        <span class="od-rail-fill" />
-        <a class="od-rail-btn" href={`/view/${encodeURIComponent(name)}/#/${current}`} target="_blank" data-tip="Preview" aria-label="Preview"><Icon name="play" /></a>
+        <button class={`od-rail-btn${panel === "history" ? " on" : ""}`} data-tip="Revision history" aria-label="Revision history"
+          onClick={() => showPanel("history")}><Icon name="history" size={20} /></button>
+        <button class={`od-rail-btn${panel === "layers" ? " on" : ""}`} data-tip="Layers (Ctrl+O)" aria-label="Show layers"
+          onClick={() => showPanel("layers")}><Icon name="layers" size={20} /></button>
         <button class="od-rail-btn" data-tip="Export as PDF or HTML" aria-label="Export"
-          onClick={async () => { await editor.save(); setExporting(true); }}><Icon name="export" /></button>
-        <button class={`od-rail-btn od-save-${state}`} data-tip={`${SAVE_LABEL[state]}: Ctrl+S saves and records a version`}
-          aria-label={SAVE_LABEL[state]} onClick={() => void editor.save(true)}><Icon name={state === "saved" ? "check" : "dot"} /></button>
+          onClick={async () => { await editor.save(); setExporting(true); }}><Icon name="export" size={20} /></button>
+        <button class="od-rail-btn" data-tip="Media: images from all your decks" aria-label="Image library"
+          onClick={() => setLibrary(true)}><Icon name="library" size={20} /></button>
+        <button class="od-rail-btn" data-tip="Edit the slide's HTML (Alt+Shift+H)" aria-label="Edit slide HTML"
+          onClick={() => { editor.flushText?.(); setHtmlOpen(true); }}><Icon name="code" size={20} /></button>
+        <span class="od-rail-fill" />
+        <ThemeToggle />
+        <Menu label="Deck" items={[
+          { label: "Rename deck", icon: "text", run: () => setRenaming(true) },
+          { label: "Show deck folder", icon: "folder", run: () => void api.health().then((h) => api.reveal(`${h.decks_root}/${name}`)) },
+          { label: "Move deck to trash", icon: "trash", danger: true, run: () => void trash() },
+        ]} />
       </nav>
-      <aside class="od-slides" ref={listRef} aria-label="Slides">
-        <div class="od-deck-head">
-          <button class="od-deck-title" title={`${name}: click to rename`} onClick={async () => {
-            const t = prompt("Deck title", editor.deck.meta.title);
-            if (t && t.trim() && t !== editor.deck.meta.title) { await editor.setMeta({ title: t.trim() }); setReloads((n) => n + 1); }
-          }}>{editor.deck.meta.title}</button>
-          <button class="od-icon-btn" title="Move this deck to the trash" aria-label="Move this deck to the trash" onClick={async () => {
-            if (!confirm(`Move “${editor.deck.meta.title}” to the trash? It goes to the .trash folder of your decks and can be moved back by hand.`)) return;
-            await editor.save(true);
-            const r = await fetch(`/api/decks/${encodeURIComponent(name)}`, { method: "DELETE", headers: { "X-Opendeck": "1" } });
-            if (r.ok) location.hash = "#/"; else alert(`The deck was not moved: ${(await r.json()).error}`);
-          }}><Icon name="trash" size={16} /></button>
+
+      <aside class="od-palette-col" aria-label="Insert">
+        <div class="od-blocks">
+          <Block icon="text" label="Text" aria="Add text" tip="T" onClick={() => { insert((s) => textBlock(s, 212, 250)); editor.pendingEdit.value = editor.selection.value[0]; }} />
+          <Block icon="shape" label="Shape" aria="Add shape" onClick={() => insert((s) => shapeBlock(s, 412, 228))} />
+          <Block icon="image" label="Image" aria="Add image" tip="Or drop / paste one on the slide" onClick={pickImages} />
+          <Block icon="pen" label="Pen" aria="Draw freehand" tip="P, Esc to stop" on={tool === "pen"} onClick={() => setTool("pen")} />
+          <Block icon="line" label="Line" aria="Draw a line" tip="L, then drag" on={tool === "line"} onClick={() => setTool("line")} />
+          <Block icon="arrow" label="Arrow" aria="Draw an arrow" tip="A, then drag" on={tool === "arrow"} onClick={() => setTool("arrow")} />
+          <Block icon="sigma" label="Maths" aria="Add maths" onClick={() => insert((s) => mathBlock(s, 412, 240))} />
         </div>
-        <div class="od-slide-tools">
-          <button title="New slide" aria-label="New slide" onClick={() => slideOp("add")}><Icon name="plus" size={18} /></button>
-          <button title="Duplicate slide (Ctrl+D)" aria-label="Duplicate slide" onClick={() => slideOp("dup")}><Icon name="copy" size={18} /></button>
-          <button title="Delete slide (Ctrl+Backspace)" aria-label="Delete slide" disabled={slides.length < 2} onClick={() => slideOp("del")}><Icon name="trash" size={18} /></button>
-        </div>
-        {slides.map((s, i) => (
-          <div key={s.id || i} draggable onDragStart={() => setDragFrom(i)} onDragOver={(e) => dragFrom !== null && e.preventDefault()}
-            onDrop={(e) => { e.preventDefault(); dropSlide(i); }}>
-            <SlideThumb html={slideHtml(s)} deck={editor.deck} n={i + 1} active={i === current}
-              onClick={() => { editor.flushText?.(); editor.current.value = i; editor.selection.value = []; }} />
-          </div>
-        ))}
       </aside>
-      <div class="od-center">
-        {slides.length > 0 && <Canvas editor={editor} />}
-        <div class="od-status" role="status">
-          {(state === "conflict" || state === "error") && <span class="od-error">{editor.message.value}</span>}
-          {editor.zoom.value !== 1 && <button class="od-zoom" title="Fit to the window (0)" onClick={() => (editor.zoom.value = 1)}>{Math.round(editor.zoom.value * 100)} %</button>}
-          <span>Slide {current + 1} of {slides.length}</span>
+
+      <main class="od-center">
+        <header class="od-center-head">
+          <DeckTitle editor={editor} name={name} editing={renaming} setEditing={setRenaming} onRenamed={() => setReloads((n) => n + 1)} />
+          <span class={`od-save-text od-save-${state}`} role="status">{SAVE_LABEL[state]}</span>
+          <span class="od-head-fill" />
+          <span class="od-status">Slide {current + 1} <span>of {slides.length}</span></span>
+          <div class="od-zoom" role="group" aria-label="Zoom">
+            <IconButton icon="minus" label="Zoom out" tip="Zoom out (−)" size={14} onClick={() => (editor.zoom.value = Math.max(0.25, zoom / 1.25))} />
+            <button class="od-zoom-val" data-tip="Fit to the window (0)" onClick={() => (editor.zoom.value = 1)}>
+              {zoom === 1 ? "Fit" : `${Math.round(zoom * 100)}%`}</button>
+            <IconButton icon="plus" label="Zoom in" tip="Zoom in (+)" size={14} onClick={() => (editor.zoom.value = Math.min(4, zoom * 1.25))} />
+          </div>
+        </header>
+        <div class="od-canvas-wrap">
+          {slides.length > 0 && <Canvas editor={editor} />}
+          {(state === "conflict" || state === "error") && (
+            <div class="od-toast" role="alert">
+              <Icon name="warning" size={18} />
+              <span>{editor.message.value || SAVE_LABEL[state]}</span>
+              {state === "conflict" && <button class="od-btn small" onClick={() => setReloads((n) => n + 1)}>Reload the deck</button>}
+              {state === "error" && <button class="od-btn small" onClick={() => void editor.save()}>Retry</button>}
+            </div>
+          )}
         </div>
-      </div>
-      <div class="od-side">
-        <Inspector editor={editor} />
-        {layers && <Layers editor={editor} />}
-        {history && <History editor={editor} onRestored={() => { setHistory(false); setReloads((n) => n + 1); }} />}
-      </div>
+      </main>
+
+      <section class="od-strip" aria-label="Slides">
+        <div class="od-strip-actions">
+          <IconButton icon="plus" label="New slide" size={16} onClick={() => slideOp("add")} />
+          <IconButton icon="copy" label="Duplicate slide" tip="Duplicate slide (Ctrl+D)" size={16} onClick={() => slideOp("dup")} />
+          <IconButton icon="trash" label="Delete slide" tip="Delete slide (Ctrl+Backspace)" size={16} disabled={slides.length < 2} onClick={() => slideOp("del")} />
+        </div>
+        <div class="od-slide-list" ref={listRef}
+          onWheel={(e) => { if (!e.shiftKey && Math.abs(e.deltaY) > Math.abs(e.deltaX)) { e.currentTarget.scrollLeft += e.deltaY; e.preventDefault(); } }}>
+          {slides.map((s, i) => (
+            <div key={s.id || i} class={`od-slide-slot${dragOver === i && dragFrom !== i ? " drop" : ""}`} draggable
+              onDragStart={() => setDragFrom(i)} onDragEnd={() => { setDragFrom(null); setDragOver(null); }}
+              onDragOver={(e) => { if (dragFrom !== null) { e.preventDefault(); setDragOver(i); } }}
+              onDrop={(e) => { e.preventDefault(); dropSlide(i); }}>
+              <SlideThumb html={slideHtml(s)} deck={editor.deck} n={i + 1} active={i === current}
+                onClick={() => { editor.flushText?.(); editor.current.value = i; editor.selection.value = []; }} />
+            </div>
+          ))}
+          <button class="od-slide-add" aria-label="New slide at the end" data-tip="New slide at the end"
+            onClick={() => { editor.current.value = slides.length - 1; slideOp("add"); }}>
+            <Icon name="plus" size={18} /></button>
+        </div>
+      </section>
+
+      <aside class="od-side" aria-label="Settings">
+        <div class="od-tabs" role="tablist">
+          {(["design", "layers", "history"] as Panel[]).map((p) => (
+            <button role="tab" aria-selected={panel === p} aria-label={p[0].toUpperCase() + p.slice(1)}
+              class={panel === p ? "on" : ""} onClick={() => setPanel(p)}>
+              {p === "design" ? "Design" : p === "layers" ? "Layers" : "History"}
+            </button>
+          ))}
+        </div>
+        <div class="od-side-body">
+          {panel === "design" && <Inspector editor={editor} onEditHtml={() => { editor.flushText?.(); setHtmlOpen(true); }} />}
+          {panel === "layers" && <Layers editor={editor} />}
+          {panel === "history" && <History editor={editor} onRestored={() => { setPanel("design"); setReloads((n) => n + 1); }} />}
+        </div>
+      </aside>
       {htmlOpen && <SlideHtml editor={editor} onClose={() => setHtmlOpen(false)} />}
       {library && <Library editor={editor} onClose={() => setLibrary(false)} />}
       {exporting && <ExportDialog deck={editor.deck} onClose={() => setExporting(false)} />}

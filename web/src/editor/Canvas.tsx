@@ -67,7 +67,7 @@ export function Canvas({ editor }: { editor: Editor }) {
     const el = wrap.current!;
     const fit = () => {
       const r = el.getBoundingClientRect();
-      setWidth(Math.max(200, Math.min(r.width - 64, ((r.height - 64) * meta.width) / meta.height)));
+      setWidth(Math.max(200, Math.min(r.width - 64, ((r.height - 48) * meta.width) / meta.height)));
     };
     fit();
     const ro = new ResizeObserver(fit);
@@ -438,13 +438,15 @@ export function Canvas({ editor }: { editor: Editor }) {
             <div class="od-marquee" style={{ left: `${marquee.left * scale}px`, top: `${marquee.top * scale}px`,
               width: `${marquee.width * scale}px`, height: `${marquee.height * scale}px` }} />
           )}
-          {single && (
+          {single && !text.editing && (
             <div class="od-size" style={{ left: `${(single.left + single.width / 2) * scale}px`, top: `${(single.top + single.height) * scale + 8}px` }}>
               {Math.round(single.width)} × {Math.round(single.height)}
             </div>
           )}
           {text.editing && boxes[text.editing] && (
-            <TextToolbar x={boxes[text.editing].left * scale} y={Math.max(0, boxes[text.editing].top * scale - 40)} deckColours={colours} />
+            <TextToolbar x={Math.max(0, boxes[text.editing].left * scale)} deckColours={colours}
+              y={boxes[text.editing].top * scale >= 46 ? boxes[text.editing].top * scale - 46
+                : (boxes[text.editing].top + boxes[text.editing].height) * scale + 8} />
           )}
           {guides.map((g, i) => (
             <div key={i} class={`od-guide od-guide-${g.axis}`} style={g.axis === "x" ? { left: `${g.at * scale}px` } : { top: `${g.at * scale}px` }} />

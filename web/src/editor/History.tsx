@@ -1,10 +1,12 @@
-// Versions of the deck recorded in the history mirror: view one in a tab, or restore it.
+// History tab: versions of the deck recorded in the history mirror. View one in a tab, or restore it.
 import { useEffect, useState } from "preact/hooks";
+import { Icon } from "../app/icons";
 import type { Editor } from "./store";
 
 interface Version { rev: string; date: string; message: string }
 
-const when = (iso: string) => new Date(iso).toLocaleString(undefined, { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+const day = (iso: string) => new Date(iso).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short", year: "numeric" });
+const time = (iso: string) => new Date(iso).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
 
 function describe(message: string, deck: string): string {
   const m = message.startsWith(`${deck}: `) ? message.slice(deck.length + 2) : message;
@@ -27,28 +29,41 @@ export function History({ editor, onRestored }: { editor: Editor; onRestored: ()
   useEffect(() => { void load(); }, [editor]);
 
   const restore = async (v: Version) => {
-    if (!confirm(`Restore the version of ${when(v.date)}? The current state stays in the history, so you can come back to it.`)) return;
+    if (!confirm(`Restore the version of ${day(v.date)}, ${time(v.date)}? The current state stays in the history, so you can come back to it.`)) return;
     const r = await fetch(`/api/decks/${encodeURIComponent(editor.name)}/history/${v.rev}/restore`, {
       method: "POST", headers: { "X-Opendeck": "1" } });
     if (r.ok) onRestored(); else setError((await r.json()).error ?? r.statusText);
   };
 
+  let lastDay = "";
   return (
-    <section class="od-layers od-history" aria-label="History">
-      <h3>History</h3>
-      {error && <p class="od-error">{error}</p>}
-      {!versions && !error && <p class="od-hint">Loading versions…</p>}
-      {versions?.length === 0 && <p class="od-hint">No version recorded yet. Ctrl+S records one.</p>}
-      {versions?.map((v, i) => (
-        <div class="od-version" key={v.rev}>
-          <div>
-            <div class="od-version-when">{when(v.date)}{i === 0 ? " (current)" : ""}</div>
-            <div class="od-hint">{describe(v.message, editor.name)}</div>
-          </div>
-          <a href={`/history/${encodeURIComponent(editor.name)}/${v.rev}/`} target="_blank" title="Open this version in a tab">View</a>
-          {i > 0 && <button onClick={() => restore(v)}>Restore</button>}
-        </div>
-      ))}
-    </section>
+    <div class="od-history" aria-label="History">
+      <p class="od-panel-note">Each version is a saved state of the deck. Ctrl+S records one.</p>
+      {error && <p class="od-note od-note-error"><Icon name="warning" size={16} />{error}</p>}
+      {!versions && !error && [0, 1, 2].map((i) => <div key={i} class="od-skel od-skel-row" />)}
+      {versions?.length === 0 && <p class="od-hint">No version recorded yet.</p>}
+      <ol class="od-timeline">
+        {versions?.map((v, i) => {
+          const d = day(v.date);
+          const head = d !== lastDay;
+          lastDay = d;
+          return (
+            <li key={v.rev} class={i === 0 ? "now" : ""}>
+              {head && <h5>{d}</h5>}
+              <div class="od-version">
+                <span class="od-version-dot" aria-hidden="true" />
+                <div class="od-version-text">
+                  <span class="od-version-when">{time(v.date)}{i === 0 ? <em>Current</em> : null}</span>
+                  <span class="od-version-what">{describe(v.message, editor.name)}</span>
+                </div>
+                <a href={`/history/${encodeURIComponent(editor.name)}/${v.rev}/`} target="_blank" title="Open this version in a tab"
+                  aria-label="View this version"><Icon name="open" size={14} /></a>
+                {i > 0 && <button class="od-btn small" onClick={() => restore(v)}>Restore</button>}
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+    </div>
   );
 }

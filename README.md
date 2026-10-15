@@ -15,22 +15,28 @@ Status: **alpha.** The clean-room rules are in [CLEANROOM.md](CLEANROOM.md).
 `opendeck` opens the editor window (`opendeck install-desktop` adds it to the application menu);
 `opendeck serve --browser` opens the same editor in your browser.
 
-- **Decks:** every deck in your decks folder, by year. Edits save automatically; Ctrl+S also
+- **Decks:** every deck in your decks folder, by year. Hover a deck and click Duplicate to start a
+  new deck from it (slides and images are copied; the copy is filed under this month). Edits save automatically; Ctrl+S also
   records a version in the history (History panel: view or restore any version).
 - **Blocks:** click, Shift-click or drag a frame to select; drag to move (with alignment guides),
-  handles to resize and rotate; arrow keys nudge; Ctrl+D duplicates; Ctrl+G groups; Ctrl+O shows
-  the layers.
+  handles to resize and rotate; arrow keys nudge; Ctrl+D duplicates; Ctrl+G groups; Ctrl+O switches
+  the side panel to the layers.
+- **Layout (as in slides.com):** the left rail has All decks, Preview, Undo/Redo, the save state,
+  History, Layers, Export, Media and the slide's HTML; next to it, the palette adds text, shapes,
+  images, pen, lines, arrows and maths. The slides run along the bottom, with new/duplicate/delete
+  on their left. The right panel has three tabs: Design (the selected block), Layers and History.
 - **Text:** double-click to type. The toolbar sets font, size, colour, bold/italic/…, lists,
-  alignment and links; the right-hand panel sets them for a whole block. Inline maths: `\( … \)`.
+  alignment and links; the Design tab sets them for a whole block. Inline maths: `\( … \)`.
 - **Maths:** double-click a maths block and type LaTeX; it renders as you type (KaTeX).
 - **Images:** drop or paste them onto a slide, or pick from the images of all your decks. Each
-  image is saved into the deck's `media/` folder. The right-hand panel crops them.
+  image is saved into the deck's `media/` folder. The Design tab crops them.
 - **Lines, arrows, drawing:** L, A and P, then drag on the slide.
-- **Slides:** new, duplicate, delete, drag to reorder. Copy blocks or slides (Ctrl+C) and paste
+- **Slides:** new, duplicate, delete, drag to reorder in the strip at the bottom. Copy blocks or slides (Ctrl+C) and paste
   them into another deck (Ctrl+V): their images come along.
 - **Zoom:** `+`, `−`, `0` (fit), or Ctrl + mouse wheel.
-- **Deck:** click its title to rename it; the bin icon moves it to `.trash/` in your decks folder.
-  Alt+Shift+H edits the current slide's HTML.
+- **Deck:** click its title to rename it. The deck menu (⋯) edits the current slide's HTML
+  (Alt+Shift+H), shows the deck folder, or moves the deck to `.trash/` in your decks folder.
+- **Theme:** the sun/moon button switches the editor between light and dark.
 - **Export:** PDF, HTML folder, HTML zip or one self-contained HTML file, into any folder below
   your export root.
 
@@ -94,3 +100,7 @@ opendeck export html <deck> --out <folder below export_root> [--zip | --single]
 python -m pytest -q
 OPENDECK_EXAMPLES=/path/to/unpacked/exports python -m pytest -q   # also the real-deck tests
 ```
+
+## Credits
+
+Interface type: IBM Plex Sans and Plex Mono (SIL OFL). Icons: Phosphor (MIT).

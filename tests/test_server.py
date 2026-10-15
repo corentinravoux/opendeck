@@ -214,6 +214,26 @@ def test_new_deck(env):
     assert client.post("/api/decks", headers=W, json={"title": "  "}).status_code == 400
 
 
+def test_duplicate_deck(env):
+    client, config, name, _ = env
+    src = config.decks_root / name
+    (src / ".opendeck").mkdir(exist_ok=True)
+    (src / ".opendeck" / "state.json").write_text("{}")
+    assert client.post(f"/api/decks/{name}/duplicate", json={"title": "Copie"}).status_code == 403  # needs X-Opendeck
+    r = client.post(f"/api/decks/{name}/duplicate", headers=W, json={"title": "Séminaire: copie"})
+    assert r.status_code == 200
+    new = r.json()["name"]
+    assert re.fullmatch(r"\d{4}-\d{2}_seminaire-copie", new)
+    copy, orig = client.get(f"/api/decks/{new}").json(), client.get(f"/api/decks/{name}").json()
+    assert copy["meta"]["title"] == "Séminaire: copie" and copy["slides"] == orig["slides"]
+    assert sorted(p.name for p in (config.decks_root / new / "media").iterdir()) == sorted(p.name for p in (src / "media").iterdir())
+    assert (config.decks_root / new / "lib").is_dir() == (src / "lib").is_dir()
+    assert not (config.decks_root / new / ".opendeck").exists()
+    assert client.post(f"/api/decks/{name}/duplicate", headers=W, json={"title": " "}).status_code == 400
+    assert client.post("/api/decks/nope/duplicate", headers=W, json={"title": "x"}).status_code == 404
+    assert len(client.get("/api/decks").json()) == 2
+
+
 def test_rename_and_trash(env):
     client, config, name, _ = env
     deck = client.get(f"/api/decks/{name}").json()

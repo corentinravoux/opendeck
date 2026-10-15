@@ -149,16 +149,20 @@ def slugify(title: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", ascii_.lower()).strip("-")[:60] or "deck"
 
 
+def _new_folder(decks_root: Path, title: str, today: datetime | None) -> Path:
+    """A free folder path YYYY-MM_<slug> (then -2, -3, ...) for a new deck; not created."""
+    base = f"{(today or datetime.now()):%Y-%m}_{slugify(title)}"
+    name, n = base, 2
+    while (decks_root / name).exists():
+        name, n = f"{base}-{n}", n + 1
+    return decks_root / name
+
+
 def create(decks_root: Path, title: str, today: datetime | None = None) -> Path:
     """A new deck folder YYYY-MM_<slug> with one title slide (1024x576, the decks' usual theme)."""
     import secrets
 
-    today = today or datetime.now()
-    base = f"{today:%Y-%m}_{slugify(title)}"
-    name, n = base, 2
-    while (decks_root / name).exists():
-        name, n = f"{base}-{n}", n + 1
-    deck = decks_root / name
+    deck = _new_folder(decks_root, title, today)
     (deck / "media").mkdir(parents=True)
     meta = DeckMeta(title=title.strip() or "Untitled")
     sid, bid = secrets.token_hex(12), secrets.token_hex(6)
@@ -169,6 +173,34 @@ def create(decks_root: Path, title: str, today: datetime | None = None) -> Path:
              f'<div class="sl-block-content" data-placeholder-tag="h1" data-placeholder-text="Title" style="z-index: 10;">'
              f"<h2>{escape(meta.title)}</h2></div></div></section>")
     (deck / "index.html").write_text(template.render(meta, slide), encoding="utf-8")
+    return deck
+
+
+def duplicate(decks_root: Path, source: Path, title: str, today: datetime | None = None) -> Path:
+    """A copy of deck `source` under a new title, filed under this month: its slides, its images
+    (hard-linked when possible: media files are content-addressed and never rewritten) and its
+    runtime. Its export destinations, reference PDF and history stay with the original."""
+    import shutil
+
+    deck = _new_folder(decks_root, title, today)
+    tmp = deck.with_name(f".{deck.name}.tmp")
+    try:
+        (tmp / "media").mkdir(parents=True)
+        for f in (source / "media").iterdir() if (source / "media").is_dir() else ():
+            if f.is_file():
+                try:
+                    os.link(f, tmp / "media" / f.name)
+                except OSError:
+                    shutil.copy2(f, tmp / "media" / f.name)
+        if (source / "lib").is_dir():
+            shutil.copytree(source / "lib", tmp / "lib")
+        meta, slides = template.read((source / "index.html").read_text(encoding="utf-8"))
+        meta = DeckMeta.from_dict(meta.to_dict() | {"title": title.strip() or meta.title, "format": meta.format})
+        (tmp / "index.html").write_text(template.render(meta, slides), encoding="utf-8")
+        os.replace(tmp, deck)
+    finally:
+        if tmp.exists():
+            shutil.rmtree(tmp)
     return deck
 
 

@@ -1,4 +1,4 @@
-// Layers panel (Ctrl+O): the blocks of the current slide, topmost first.
+// Layers tab (Ctrl+O): the blocks of the current slide, topmost first.
 import { blocksOf, reorder, zIndex } from "../model/ops";
 import type { Block } from "../model/types";
 import type { Editor } from "./store";
@@ -22,17 +22,18 @@ export function Layers({ editor }: { editor: Editor }) {
   const move = (id: string, dir: "forward" | "backward") =>
     editor.edit("Arrange", (doc) => { reorder(doc.slides[editor.current.value], [id], dir); });
   return (
-    <aside class="od-layers">
-      <h3>Layers</h3>
+    <div class="od-layers" aria-label="Layers">
+      <p class="od-panel-note">Slide {editor.current.value + 1}, topmost first</p>
+      {blocks.length === 0 && <p class="od-hint">This slide is empty. Add text, maths or an image from the tools below the slide.</p>}
       {blocks.map((b) => (
         <div key={b.id} class={`od-layer${sel.includes(b.id) ? " on" : ""}`}
           onClick={(e) => (editor.selection.value = e.shiftKey ? [...sel, b.id] : [b.id])}>
           <span class="od-layer-icon"><Icon name={ICON[b.type] ?? "shape"} size={16} /></span>
           <span class="od-layer-name" title={summary(b)}>{summary(b)}</span>
-          <button title="Bring forward" aria-label="Bring forward" onClick={(e) => { e.stopPropagation(); move(b.id, "forward"); }}><Icon name="up" size={16} /></button>
-          <button title="Send backward" aria-label="Send backward" onClick={(e) => { e.stopPropagation(); move(b.id, "backward"); }}><Icon name="down" size={16} /></button>
+          <button title="Bring forward" aria-label="Bring forward" onClick={(e) => { e.stopPropagation(); move(b.id, "forward"); }}><Icon name="up" size={14} /></button>
+          <button title="Send backward" aria-label="Send backward" onClick={(e) => { e.stopPropagation(); move(b.id, "backward"); }}><Icon name="down" size={14} /></button>
         </div>
       ))}
-    </aside>
+    </div>
   );
 }

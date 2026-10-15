@@ -3,6 +3,7 @@ import "../runtime/fonts.css";
 import "../render/base.css";
 import "../render/theme/presets.css";
 import "./app.css";
+import "./theme";
 
 import { render } from "preact";
 import { useEffect, useState } from "preact/hooks";

@@ -219,7 +219,7 @@ def test_text_editing_in_place(running):
         assert "Croissance" not in slides_of(deck)
 
         # insert a new text block from the rail: it opens for editing with its text selected
-        page.locator(".od-rail-btn[aria-label='Add text']").click()
+        page.locator(".od-block-btn[aria-label='Add text']").click()
         page.wait_for_timeout(500)
         page.keyboard.type("Nouveau")
         page.keyboard.press("Escape")
@@ -389,7 +389,7 @@ def test_history_restore(running):
         page.keyboard.type("Changed")
         page.keyboard.press("Escape")
         until(lambda: "<p>Changed</p>" in slides_of(deck))
-        page.locator(".od-rail-btn[aria-label=History]").click()
+        page.locator(".od-tabs [aria-label=History]").click()
         page.wait_for_function("document.querySelectorAll('.od-version').length >= 2", timeout=10000)
         page.locator(".od-version button", has_text="Restore").last.click()
         until(lambda: "Croissance" in slides_of(deck))
@@ -421,7 +421,7 @@ def test_pen_and_shapes(running):
         until(lambda: 'data-block-type="drawing"' in slides_of(deck) and "data-points=" in slides_of(deck))
         page.keyboard.press("Escape")
 
-        page.locator(".od-rail-btn[aria-label='Add shape']").click()
+        page.locator(".od-block-btn[aria-label='Add shape']").click()
         page.locator(".od-inspector select").first.select_option("circle")
         until(lambda: 'data-shape-type="circle"' in slides_of(deck) and "<ellipse" in slides_of(deck))
         page.locator(".od-inspector .od-swatch-btn[aria-label=Border]").click()
@@ -452,4 +452,27 @@ def test_library_places_image_from_another_deck(running, make_export, monkeypatc
         item.click()
         until(lambda: (deck_b / "media" / "only-in-a.png").is_file() and 'src="media/only-in-a.png"' in slides_of(deck_b))
         assert errors == []
+        browser.close()
+
+
+def test_duplicate_deck_from_the_deck_list(running):
+    from playwright.sync_api import sync_playwright
+
+    server, deck = running
+    with sync_playwright() as p:
+        browser = p.chromium.launch(channel="chrome", headless=True)
+        page = browser.new_page(viewport={"width": 1400, "height": 900})
+        page.goto(f"{server.url}/")
+        card = page.locator(".od-card-wrap").first
+        card.hover()
+        card.locator(".od-card-actions button").click()
+        title = page.locator(".od-modal input")
+        assert title.input_value().endswith("(copy)")
+        title.fill("Copie du séminaire")
+        page.locator(".od-modal button[type=submit]").click()
+        page.wait_for_function("location.hash.includes('copie-du-seminaire')", timeout=10000)
+        copy = next(d for d in deck.parent.iterdir() if d.name.endswith("_copie-du-seminaire"))
+        ready(page, copy.name)
+        assert slides_of(copy) == slides_of(deck)
+        assert {f.name for f in (copy / "media").iterdir()} == {f.name for f in (deck / "media").iterdir()}
         browser.close()

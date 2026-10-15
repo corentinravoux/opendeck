@@ -3,7 +3,9 @@
 // and is typeset again on leaving. A block left unchanged keeps its HTML byte for byte.
 import { useEffect, useRef, useState } from "preact/hooks";
 import { findBlock } from "../model/ops";
-import { BASIC_COLOURS, FONTS } from "./fonts";
+import { Icon, type IconName } from "../app/icons";
+import { FONTS } from "./fonts";
+import { Palette } from "./Palette";
 import type { Editor } from "./store";
 
 /** Tidy what the browser's editing commands produce, closer to the decks' own markup. */
@@ -82,59 +84,79 @@ function setColour(colour: string) {
   exec("foreColor", colour);
 }
 
-function Palette({ deck, onPick }: { deck: string[]; onPick: (c: string) => void }) {
-  return (
-    <div class="od-palette" onMouseDown={(e) => { if ((e.target as HTMLElement).tagName !== "INPUT") e.preventDefault(); }}>
-      {deck.length > 0 && <>
-        <h4>Colours in this deck</h4>
-        <div class="od-swatches">{deck.map((c) => <button title={c} style={{ background: c }} onClick={() => onPick(c)} />)}</div>
-      </>}
-      <h4>Basic colours</h4>
-      <div class="od-swatches">{BASIC_COLOURS.map((c) => <button title={c} style={{ background: c }} onClick={() => onPick(c)} />)}</div>
-      <label>Other colour <input type="color" onChange={(e) => onPick((e.target as HTMLInputElement).value)} /></label>
-    </div>
-  );
-}
+type Btn = [IconName, string, () => void];
+
+const STYLE: Btn[] = [
+  ["bold", "Bold (Ctrl+B)", () => exec("bold")],
+  ["italic", "Italic (Ctrl+I)", () => exec("italic")],
+  ["underline", "Underline (Ctrl+U)", () => exec("underline")],
+  ["strike", "Strikethrough", () => exec("strikeThrough")],
+  ["subscript", "Subscript", () => exec("subscript")],
+  ["superscript", "Superscript", () => exec("superscript")],
+];
+const PARA: Btn[] = [
+  ["bullets", "Bullet list", () => exec("insertUnorderedList")],
+  ["numbers", "Numbered list", () => exec("insertOrderedList")],
+  ["alignLeft", "Align left", () => exec("justifyLeft")],
+  ["alignCenter", "Centre", () => exec("justifyCenter")],
+  ["alignRight", "Align right", () => exec("justifyRight")],
+];
 
 export function TextToolbar({ x, y, deckColours }: { x: number; y: number; deckColours: string[] }) {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [last, setLast] = useState("#000000");
+  const saved = useRef<Range | null>(null);
   const keep = (e: Event) => { if ((e.target as HTMLElement).tagName !== "SELECT" && (e.target as HTMLElement).tagName !== "INPUT") e.preventDefault(); };
-  const btn = (label: string, title: string, run: () => void, cls = "") => (
-    <button class={cls} title={title} aria-label={title} onMouseDown={(e) => e.preventDefault()} onClick={run}>{label}</button>
+  const btn = ([icon, title, run]: Btn) => (
+    <button class="od-tb-btn" title={title} aria-label={title} onMouseDown={(e) => e.preventDefault()} onClick={run}>
+      <Icon name={icon} size={16} />
+    </button>
   );
-  const pick = (c: string) => { setColour(c); setLast(c); setPaletteOpen(false); };
+  const openPalette = () => {
+    const sel = window.getSelection();
+    saved.current = sel && sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
+    setPaletteOpen((v) => !v);
+  };
+  const pick = (c: string) => {
+    // the custom colour fields take the focus: put the text selection back first
+    const sel = window.getSelection();
+    if (saved.current && sel) {
+      (saved.current.startContainer.parentElement?.closest("[contenteditable=true]") as HTMLElement | null)?.focus();
+      sel.removeAllRanges();
+      sel.addRange(saved.current);
+    }
+    setColour(c);
+    setLast(c);
+    setPaletteOpen(false);
+  };
   return (
     <div class="od-texttools" style={{ left: `${x}px`, top: `${y}px` }} onMouseDown={keep} role="toolbar" aria-label="Text formatting">
-      <select title="Font" aria-label="Font" value="" onChange={(e) => { setFont((e.target as HTMLSelectElement).value); (e.target as HTMLSelectElement).value = ""; }}>
-        <option value="" disabled>Font</option>
-        {FONTS.map((f) => <option value={f.css} style={{ fontFamily: f.css }}>{f.label}</option>)}
-      </select>
-      <select title="Size" aria-label="Size" value="" onChange={(e) => { setSize((e.target as HTMLSelectElement).value); (e.target as HTMLSelectElement).value = ""; }}>
-        <option value="" disabled>Size</option>
-        {SIZES.map((s) => <option value={s}>{s}</option>)}
-      </select>
+      <span class="od-tb-select">
+        <select title="Font" aria-label="Font" value="" onChange={(e) => { setFont((e.target as HTMLSelectElement).value); (e.target as HTMLSelectElement).value = ""; }}>
+          <option value="" disabled>Font</option>
+          {FONTS.map((f) => <option value={f.css} style={{ fontFamily: f.css }}>{f.label}</option>)}
+        </select>
+        <Icon name="down" size={12} />
+      </span>
+      <span class="od-tb-select">
+        <select title="Size" aria-label="Size" value="" onChange={(e) => { setSize((e.target as HTMLSelectElement).value); (e.target as HTMLSelectElement).value = ""; }}>
+          <option value="" disabled>Size</option>
+          {SIZES.map((s) => <option value={s}>{s}</option>)}
+        </select>
+        <Icon name="down" size={12} />
+      </span>
       <span class="od-tb-colour">
         <button class="od-swatch-btn" title="Text colour" aria-label="Text colour" aria-expanded={paletteOpen}
-          onMouseDown={(e) => e.preventDefault()} onClick={() => setPaletteOpen((v) => !v)}><span style={{ background: last }} /></button>
-        {paletteOpen && <Palette deck={deckColours} onPick={pick} />}
+          onMouseDown={(e) => e.preventDefault()} onClick={openPalette}><span class="od-chip" style={{ background: last }} /></button>
+        {paletteOpen && <Palette deck={deckColours} value={last} onPick={pick} keepFocus />}
       </span>
       <span class="od-tb-sep" />
-      {btn("B", "Bold (Ctrl+B)", () => exec("bold"), "od-tb-b")}
-      {btn("I", "Italic (Ctrl+I)", () => exec("italic"), "od-tb-i")}
-      {btn("U", "Underline (Ctrl+U)", () => exec("underline"), "od-tb-u")}
-      {btn("S", "Strikethrough", () => exec("strikeThrough"), "od-tb-s")}
-      {btn("x₂", "Subscript", () => exec("subscript"))}
-      {btn("x²", "Superscript", () => exec("superscript"))}
+      {STYLE.map(btn)}
       <span class="od-tb-sep" />
-      {btn("•", "Bullet list", () => exec("insertUnorderedList"))}
-      {btn("1.", "Numbered list", () => exec("insertOrderedList"))}
-      {btn("⇤", "Align left", () => exec("justifyLeft"))}
-      {btn("↔", "Centre", () => exec("justifyCenter"))}
-      {btn("⇥", "Align right", () => exec("justifyRight"))}
+      {PARA.map(btn)}
       <span class="od-tb-sep" />
-      {btn("Link", "Add a link", () => { const url = prompt("Link address"); if (url) exec("createLink", url); })}
-      {btn("Clear", "Remove formatting", () => exec("removeFormat"))}
+      {btn(["link", "Add a link", () => { const url = prompt("Link address"); if (url) exec("createLink", url); }])}
+      {btn(["eraser", "Remove formatting", () => exec("removeFormat")])}
     </div>
   );
 }

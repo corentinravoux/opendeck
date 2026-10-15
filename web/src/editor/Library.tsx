@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from "preact/hooks";
 import { imageBlock } from "../model/factory";
 import { Icon } from "../app/icons";
+import { Modal, ModalHead } from "../app/ui";
 import type { Editor } from "./store";
 
 interface Item { deck: string; title: string; src: string; bytes: number }
@@ -38,9 +39,6 @@ export function Library({ editor, onClose }: { editor: Editor; onClose: () => vo
   const [error, setError] = useState("");
   useEffect(() => {
     fetch("/api/library").then((r) => r.json()).then(setItems).catch((e) => setError(String(e)));
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    addEventListener("keydown", onKey);
-    return () => removeEventListener("keydown", onKey);
   }, []);
   const groups = useMemo(() => {
     const q = filter.trim().toLowerCase();
@@ -54,35 +52,34 @@ export function Library({ editor, onClose }: { editor: Editor; onClose: () => vo
   }, [items, filter]);
 
   return (
-    <div class="od-modal-back" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div class="od-modal od-library" role="dialog" aria-label="Images from your decks">
-        <header class="od-library-head">
-          <h2>Images from your decks</h2>
-          <label class="od-search">
-            <Icon name="search" size={18} />
-            <input placeholder="Filter by deck" aria-label="Filter by deck" value={filter} autoFocus
-              onInput={(e) => setFilter((e.target as HTMLInputElement).value)} />
-          </label>
-          <button class="od-icon-btn" aria-label="Close" onClick={onClose}><Icon name="close" /></button>
-        </header>
-        {error && <p class="od-error">{error}</p>}
-        {!items && !error && <p class="od-hint">Loading images…</p>}
-        <div class="od-library-body">
-          {groups.map(([deck, list]) => (
-            <section key={deck}>
-              <h3>{list[0].title}{deck === editor.name ? " (this deck)" : ""}</h3>
-              <div class="od-library-grid">
-                {list.map((it) => (
-                  <button key={it.src} class="od-library-item" title={`Place on the slide (${Math.round(it.bytes / 1024)} kB)`}
-                    onClick={() => place(editor, it).then(onClose, (e) => setError(String(e.message ?? e)))}>
-                    <img loading="lazy" alt="" src={`/api/thumb/${encodeURIComponent(deck)}/${it.src.slice(6)}?w=240`} />
-                  </button>
-                ))}
-              </div>
-            </section>
-          ))}
-        </div>
+    <Modal label="Images from your decks" onClose={onClose} class="od-library">
+      <ModalHead title="Images from your decks" onClose={onClose}
+        sub={items ? `${items.length} images in ${new Set(items.map((i) => i.deck)).size} decks. A picked image is copied into this deck.` : "Collecting images…"} />
+      <div class="od-library-tools">
+        <label class="od-search">
+          <Icon name="search" size={16} />
+          <input placeholder="Filter by deck" aria-label="Filter by deck" value={filter} autofocus
+            onInput={(e) => setFilter((e.target as HTMLInputElement).value)} />
+        </label>
       </div>
-    </div>
+      <div class="od-library-body">
+        {error && <p class="od-note od-note-error"><Icon name="warning" size={16} />{error}</p>}
+        {!items && !error && <div class="od-library-grid">{Array.from({ length: 12 }, (_, i) => <div key={i} class="od-skel od-library-item" />)}</div>}
+        {items && groups.length === 0 && <p class="od-hint">No deck title contains “{filter}”.</p>}
+        {groups.map(([deck, list]) => (
+          <section key={deck}>
+            <h3>{list[0].title}{deck === editor.name && <em>This deck</em>}<small>{list.length}</small></h3>
+            <div class="od-library-grid">
+              {list.map((it) => (
+                <button key={it.src} class="od-library-item" title={`Place on the slide (${Math.round(it.bytes / 1024)} kB)`}
+                  onClick={() => place(editor, it).then(onClose, (e) => setError(String(e.message ?? e)))}>
+                  <img loading="lazy" alt="" src={`/api/thumb/${encodeURIComponent(deck)}/${it.src.slice(6)}?w=240`} />
+                </button>
+              ))}
+            </div>
+          </section>
+        ))}
+      </div>
+    </Modal>
   );
 }
