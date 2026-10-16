@@ -8,8 +8,9 @@ import { drawingFrom } from "../render/drawing";
 import { slideHtml } from "../model/serialize";
 import { renderSlide } from "../app/slide";
 import type { Editor } from "./store";
-import { snap, type Box, type Guide } from "./snap";
-import { imageFiles, insertImages } from "./media";
+import { snap, type Box, type Guide, type Line } from "./snap";
+import { snapGuides } from "./prefs";
+import { insertMedia, mediaFiles } from "./media";
 import { TextToolbar, useTextEditing } from "./TextEditing";
 import { deckColours } from "./fonts";
 import { serializeDoc } from "../model/serialize";
@@ -305,7 +306,8 @@ export function Canvas({ editor }: { editor: Editor }) {
       moved = true;
       if (handle === null) {
         if (ev.shiftKey) Math.abs(mx) > Math.abs(my) ? (my = 0) : (mx = 0);
-        const s = ev.altKey ? { dx: 0, dy: 0, guides: [] } :
+        // guides: on unless turned off in the header, or Alt held; ~6 screen px at any zoom
+        const s = ev.altKey || !snapGuides.value ? { dx: 0, dy: 0, guides: [] } :
           snap({ ...union, left: union.left + mx, top: union.top + my }, others, meta, 6 / scale);
         dx = mx + s.dx;
         dy = my + s.dy;
@@ -321,12 +323,28 @@ export function Canvas({ editor }: { editor: Editor }) {
         if (handle.includes("w")) { w = Math.max(4, b.width - mx); left = b.left + b.width - w; }
         if (handle.includes("s")) h = Math.max(4, b.height + my);
         if (handle.includes("n")) { h = Math.max(4, b.height - my); top = b.top + b.height - h; }
-        if (ev.shiftKey && (handle.length === 2)) {
+        const keepRatio = ev.shiftKey && handle.length === 2;
+        if (keepRatio) {
           const ratio = b.width / b.height;
           if (w / h > ratio) w = h * ratio; else h = w / ratio;
           if (handle.includes("w")) left = b.left + b.width - w;
           if (handle.includes("n")) top = b.top + b.height - h;
         }
+        // snap the dragged edges (not with a locked ratio, which snapping would break)
+        let shown: Guide[] = [];
+        if (!keepRatio && !ev.altKey && snapGuides.value) {
+          const which = {
+            x: (handle.includes("e") ? [2] : handle.includes("w") ? [0] : []) as Line[],
+            y: (handle.includes("s") && !autoHeight(ids[0]) ? [2] : handle.includes("n") ? [0] : []) as Line[],
+          };
+          const s = snap({ left, top, width: w, height: h }, others, meta, 6 / scale, which);
+          if (handle.includes("e")) w = Math.max(4, w + s.dx);
+          if (handle.includes("w") && w - s.dx >= 4) { left += s.dx; w -= s.dx; }
+          if (which.y[0] === 2) h = Math.max(4, h + s.dy);
+          if (handle.includes("n") && h - s.dy >= 4) { top += s.dy; h -= s.dy; }
+          shown = s.guides;
+        }
+        setGuides(shown);
         resized = { left, top, width: w, height: h };
         const el = startStyle[0].el;
         el.style.left = `${left}px`;
@@ -381,13 +399,13 @@ export function Canvas({ editor }: { editor: Editor }) {
       }}
       onDragOver={(e) => { if ([...(e.dataTransfer?.types ?? [])].includes("Files")) { e.preventDefault(); e.dataTransfer!.dropEffect = "copy"; } }}
       onDrop={(e) => {
-        const files = imageFiles(e.dataTransfer);
+        const files = mediaFiles(e.dataTransfer);
         e.preventDefault();
         if (!files.length) return;
         const sec = section();
         const r = sec?.getBoundingClientRect();
         const x = r ? (e.clientX - r.left) / scale : meta.width / 2, y = r ? (e.clientY - r.top) / scale : meta.height / 2;
-        void insertImages(editor, files, x, y);
+        void insertMedia(editor, files, x, y);
       }}>
       <div class={`od-canvas-stage${editor.tool.value ? " od-drawing" : ""}`} style={{ width: `${shown}px`, height: `${meta.height * scale}px` }}>
         <div class="od-canvas-slide" ref={host} onPointerDown={onPointerDown as any}

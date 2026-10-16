@@ -9,8 +9,11 @@ from pathlib import Path
 
 MEDIA_DIR = "media"
 IMAGE_TYPES = {"png", "jpg", "gif", "webp", "svg", "avif"}
+VIDEO_TYPES = {"webm", "mp4"}
 HASH_CHARS = 20
-_ALIASES = {"jpeg": "jpg", "jpe": "jpg", "tif": "tiff"}
+_ALIASES = {"jpeg": "jpg", "jpe": "jpg", "tif": "tiff", "m4v": "mp4", "mov": "mp4"}
+# ISO media brands that are still images, not video (the ftyp box is shared with MP4)
+_STILL_BRANDS = {b"avif", b"avis", b"heic", b"heix", b"heim", b"heis", b"hevc", b"hevx", b"mif1", b"msf1"}
 
 
 def sniff(data: bytes, name: str = "") -> str:
@@ -25,6 +28,10 @@ def sniff(data: bytes, name: str = "") -> str:
         return "webp"
     if data[4:12] in (b"ftypavif", b"ftypavis"):
         return "avif"
+    if data[:4] == b"\x1aE\xdf\xa3":  # EBML header: WebM (or Matroska)
+        return "webm"
+    if data[4:8] == b"ftyp" and data[8:12] not in _STILL_BRANDS:  # MP4, M4V, QuickTime
+        return "mp4"
     head = data[:2048].lstrip()
     if head.startswith(b"<svg") or (head.startswith(b"<?xml") and b"<svg" in head):
         return "svg"
@@ -60,7 +67,9 @@ def store(deck_dir: Path, data: bytes, name: str = "") -> tuple[str, bool]:
 
 
 def dimensions(path: Path) -> tuple[int | None, int | None]:
-    """Pixel size of an image file (None for unreadable or vector files without a size)."""
+    """Pixel size of an image file (None for videos, unreadable files, vector files without a size)."""
+    if path.suffix.lstrip(".") in VIDEO_TYPES:
+        return None, None  # the editor reads a video's size in the browser
     if path.suffix == ".svg":
         import re
 

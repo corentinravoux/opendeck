@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>opendeck</title>
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0a1626"/>
+      <stop offset=".55" stop-color="#103447"/>
+      <stop offset="1" stop-color="#23807b"/>
+    </linearGradient>
+    <radialGradient id="sheen" cx=".22" cy=".12" r=".75">
+      <stop offset="0" stop-color="#9fe8c8" stop-opacity=".30"/>
+      <stop offset="1" stop-color="#9fe8c8" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glow" cx=".5" cy=".5" r=".5">
+      <stop offset="0" stop-color="#ffb347" stop-opacity=".95"/>
+      <stop offset=".35" stop-color="#f77f00" stop-opacity=".55"/>
+      <stop offset="1" stop-color="#f77f00" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="front" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#e3eef3"/>
+    </linearGradient>
+    <linearGradient id="curve" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#2f8f8a"/>
+      <stop offset="1" stop-color="#f77f00"/>
+    </linearGradient>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="170%">
+      <feDropShadow dx="0" dy="7" stdDeviation="7" flood-color="#02080f" flood-opacity=".55"/>
+    </filter>
+    <clipPath id="tileclip"><rect x="8" y="8" width="240" height="240" rx="58"/></clipPath>
+  </defs>
+
+  <!-- tile -->
+  <rect x="8" y="8" width="240" height="240" rx="58" fill="url(#tile)"/>
+  <g clip-path="url(#tileclip)">
+    <rect x="8" y="8" width="240" height="240" fill="url(#sheen)"/>
+    <!-- a faint cosmic web behind the deck -->
+    <g stroke="#86e0b4" stroke-opacity=".22" stroke-width="1.6" fill="none" stroke-linecap="round">
+      <path d="M22 58 L66 40 L108 62 L150 30 L206 48 L238 24"/>
+      <path d="M66 40 L58 92 L22 120"/>
+      <path d="M108 62 L58 92"/>
+      <path d="M206 48 L222 98 L246 126"/>
+      <path d="M150 30 L176 74 L222 98"/>
+      <path d="M22 196 L40 228 M200 236 L236 206"/>
+    </g>
+    <g fill="#bff3dc" fill-opacity=".55">
+      <circle cx="66" cy="40" r="3"/><circle cx="108" cy="62" r="2.4"/><circle cx="150" cy="30" r="3.2"/>
+      <circle cx="206" cy="48" r="2.6"/><circle cx="58" cy="92" r="2.8"/><circle cx="222" cy="98" r="3"/>
+      <circle cx="176" cy="74" r="2"/><circle cx="40" cy="228" r="2.2"/><circle cx="236" cy="206" r="2.4"/>
+    </g>
+  </g>
+  <rect x="9" y="9" width="238" height="238" rx="57" fill="none" stroke="#86e0b4" stroke-opacity=".35" stroke-width="2"/>
+
+  <!-- the deck: three slides fanned out -->
+  <g transform="translate(128 150)">
+    <rect x="-74" y="-52" width="148" height="100" rx="12" fill="#86e0b4" fill-opacity=".30"
+          stroke="#bff3dc" stroke-opacity=".45" stroke-width="1.5" transform="rotate(-16) translate(-14 -14)"/>
+    <rect x="-74" y="-52" width="148" height="100" rx="12" fill="#cfeee0" fill-opacity=".62"
+          stroke="#ffffff" stroke-opacity=".5" stroke-width="1.5" transform="rotate(-7) translate(-6 -7)"/>
+    <g transform="rotate(3)" filter="url(#shadow)">
+      <rect x="-74" y="-52" width="148" height="100" rx="12" fill="url(#front)"/>
+      <!-- slide content: a title, a rising curve with its points, two lines of text -->
+      <rect x="-60" y="-40" width="62" height="9" rx="4.5" fill="#103447"/>
+      <rect x="-60" y="-26" width="40" height="5" rx="2.5" fill="#103447" fill-opacity=".35"/>
+      <path d="M-58 32 C -34 28, -22 6, -2 4 S 34 -18, 58 -30" fill="none" stroke="url(#curve)"
+            stroke-width="5" stroke-linecap="round"/>
+      <g fill="#ffffff" stroke-width="3">
+        <circle cx="-40" cy="25" r="4.5" stroke="#2f8f8a"/>
+        <circle cx="-2" cy="4" r="4.5" stroke="#6b8d6c"/>
+        <circle cx="34" cy="-15" r="4.5" stroke="#c9822a"/>
+      </g>
+      <line x1="-60" y1="38" x2="60" y2="38" stroke="#103447" stroke-opacity=".25" stroke-width="2"/>
+    </g>
+  </g>
+
+  <!-- the live dot: opendeck's accent -->
+  <circle cx="200" cy="78" r="34" fill="url(#glow)"/>
+  <circle cx="200" cy="78" r="13" fill="#f77f00" stroke="#fff4e2" stroke-width="3.5"/>
+  <circle cx="196" cy="74" r="4" fill="#ffffff" fill-opacity=".75"/>
+</svg>

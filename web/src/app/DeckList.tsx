@@ -38,7 +38,10 @@ function edited(iso: string): string {
   return `Edited ${new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}`;
 }
 
-function Card({ deck, recent = false, onDuplicate }: { deck: DeckInfo; recent?: boolean; onDuplicate: (d: DeckInfo) => void }) {
+function Card({ deck, recent = false, onDuplicate, onRename, onVisibility }: {
+  deck: DeckInfo; recent?: boolean; onDuplicate: (d: DeckInfo) => void; onRename: (d: DeckInfo) => void;
+  onVisibility: (d: DeckInfo) => void;
+}) {
   return (
     <div class="od-card-wrap">
       <a href={`#/deck/${encodeURIComponent(deck.name)}`} class="od-card" title={deck.name}>
@@ -47,11 +50,27 @@ function Card({ deck, recent = false, onDuplicate }: { deck: DeckInfo; recent?: 
         <div class="od-card-meta">
           <span>{recent ? edited(deck.modified) : `${monthOf(deck)} ${yearOf(deck)}`}</span>
           <span>{deck.slides} slides</span>
+          {deck.public && <span class="od-public" title="Published by opendeck publish"><Icon name="globe" size={13} />Public</span>}
         </div>
       </a>
+        {deck.public !== undefined && (
+          <div class="od-card-vis">
+            <label class="od-check od-vis" title={deck.public ? "Public: on the published website. Slide to make it private."
+              : "Private: never published. Slide to make it public."}>
+              <span class={deck.public ? "" : "on"}><Icon name="lock" size={13} />Private</span>
+              <input type="checkbox" role="switch" checked={deck.public}
+                aria-label={`“${deck.title}” is ${deck.public ? "public" : "private"}`}
+                onChange={(e) => { (e.target as HTMLInputElement).checked = !!deck.public; onVisibility(deck); }} />
+              <span class="od-switch" aria-hidden="true" />
+              <span class={deck.public ? "on" : ""}><Icon name="globe" size={13} />Public</span>
+            </label>
+          </div>
+        )}
       <div class="od-card-actions">
         <button class="od-btn small" aria-label={`Duplicate “${deck.title}”`} onClick={() => onDuplicate(deck)}>
           <Icon name="copy" size={14} />Duplicate</button>
+        <button class="od-btn small" aria-label={`Rename “${deck.title}”`} onClick={() => onRename(deck)}>
+          <Icon name="rename" size={14} />Rename</button>
       </div>
     </div>
   );
@@ -96,6 +115,45 @@ function NewDeck({ source, onClose }: { source?: DeckInfo; onClose: () => void }
   );
 }
 
+/** Rename a deck: a new title, and its folder renamed to match (same month); its history follows. */
+function RenameDeck({ deck, onClose, onDone }: { deck: DeckInfo; onClose: () => void; onDone: () => void }) {
+  const [title, setTitle] = useState(deck.title);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const submit = async (e: Event) => {
+    e.preventDefault();
+    const t = title.trim();
+    if (!t) return;
+    if (t === deck.title) { onClose(); return; }
+    setBusy(true);
+    try {
+      await api.renameDeck(deck.name, t);
+      onDone();
+    } catch (err) {
+      setError((err as Error).message);
+      setBusy(false);
+    }
+  };
+  return (
+    <Modal label="Rename deck" onClose={onClose} busy={busy} class="od-modal-sm">
+      <ModalHead title="Rename deck" onClose={onClose}
+        sub={<>Its folder <code>{deck.name}</code> is renamed to match the title. Its history follows it.</>} />
+      <form class="od-modal-body" onSubmit={submit}>
+        <label class="od-field">
+          <span>Title</span>
+          <input value={title} autofocus onFocus={(e) => (e.target as HTMLInputElement).select()}
+            onInput={(e) => setTitle((e.target as HTMLInputElement).value)} />
+        </label>
+        {error && <p class="od-note od-note-error"><Icon name="warning" size={16} />{error}</p>}
+        <footer class="od-modal-foot">
+          <button type="button" class="od-btn" onClick={onClose} disabled={busy}>Cancel</button>
+          <button type="submit" class="od-btn primary" disabled={busy || !title.trim()}>{busy ? "Renaming" : "Rename"}</button>
+        </footer>
+      </form>
+    </Modal>
+  );
+}
+
 function Skeleton() {
   return (
     <section class="od-year" aria-hidden="true">
@@ -115,7 +173,20 @@ export function DeckList() {
   const [filter, setFilter] = useState("");
   const [creating, setCreating] = useState(false);
   const [copying, setCopying] = useState<DeckInfo | null>(null);
+  const [renaming, setRenaming] = useState<DeckInfo | null>(null);
   const search = useRef<HTMLInputElement>(null);
+
+  // private -> public is rare and publishes the deck: ask first; public -> private does not
+  const toggleVisibility = async (d: DeckInfo) => {
+    const next = !d.public;
+    if (next && !confirm(`Make “${d.title}” public?\n\nIt will be on the published website after the next “opendeck publish”.`)) return;
+    try {
+      await api.setVisibility(d.name, next);
+      setDecks((all) => all && all.map((x) => (x.name === d.name ? { ...x, public: next } : x)));
+    } catch (e) {
+      alert(String((e as Error).message ?? e));
+    }
+  };
 
   useEffect(() => {
     document.title = "opendeck";
@@ -188,7 +259,7 @@ export function DeckList() {
           <section class="od-recent" aria-label="Recently edited">
             <h2 class="od-eyebrow">Recently edited</h2>
             <ul class="od-grid od-grid-recent">
-              {recent.map((d) => <li key={d.name}><Card deck={d} recent onDuplicate={setCopying} /></li>)}
+              {recent.map((d) => <li key={d.name}><Card deck={d} recent onDuplicate={setCopying} onRename={setRenaming} onVisibility={toggleVisibility} /></li>)}
             </ul>
           </section>
         )}
@@ -196,13 +267,15 @@ export function DeckList() {
           <section class="od-year" key={year} aria-label={year}>
             <h2><span>{year}</span><small>{list.length} {list.length === 1 ? "deck" : "decks"}</small></h2>
             <ul class="od-grid">
-              {list.map((d) => <li key={d.name}><Card deck={d} onDuplicate={setCopying} /></li>)}
+              {list.map((d) => <li key={d.name}><Card deck={d} onDuplicate={setCopying} onRename={setRenaming} onVisibility={toggleVisibility} /></li>)}
             </ul>
           </section>
         ))}
       </main>
       {creating && <NewDeck onClose={() => setCreating(false)} />}
       {copying && <NewDeck source={copying} onClose={() => setCopying(null)} />}
+      {renaming && <RenameDeck deck={renaming} onClose={() => setRenaming(null)}
+        onDone={() => { setRenaming(null); void api.decks().then(setDecks); }} />}
     </div>
   );
 }

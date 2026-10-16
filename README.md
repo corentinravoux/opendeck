@@ -5,7 +5,7 @@ Free local HTML slide editor, in the spirit of slides.com — https://github.com
 - **Decks:** each deck is a folder holding an `index.html` that opens in any browser, a `media/`
   folder with its images, and a small runtime.
 - **Editing:** the editor runs in a desktop window. Maths is typeset with KaTeX.
-- **Images:** an image dropped or pasted onto a slide is saved into the deck's folder.
+- **Images and videos:** an image or a video dropped onto a slide is saved into the deck's folder.
 - **Export:** HTML and PDF.
 
 Status: **alpha.** The clean-room rules are in [CLEANROOM.md](CLEANROOM.md).
@@ -16,11 +16,14 @@ Status: **alpha.** The clean-room rules are in [CLEANROOM.md](CLEANROOM.md).
 `opendeck serve --browser` opens the same editor in your browser.
 
 - **Decks:** every deck in your decks folder, by year. Hover a deck and click Duplicate to start a
-  new deck from it (slides and images are copied; the copy is filed under this month). Edits save automatically; Ctrl+S also
+  new deck from it (slides and images are copied; the copy is filed under this month), or Rename
+  to retitle it. Edits save automatically; Ctrl+S also
   records a version in the history (History panel: view or restore any version).
-- **Blocks:** click, Shift-click or drag a frame to select; drag to move (with alignment guides),
-  handles to resize and rotate; arrow keys nudge; Ctrl+D duplicates; Ctrl+G groups; Ctrl+O switches
-  the side panel to the layers.
+- **Blocks:** click, Shift-click or drag a frame to select; drag to move, handles to resize and
+  rotate. Moved or resized blocks snap to the edges and centres of the other blocks and of the
+  slide, with magenta guides (hold Alt to move freely; the magnet button by the zoom turns it
+  off). Arrow keys nudge; Ctrl+D duplicates; Ctrl+G groups; Ctrl+O switches the side panel to the
+  layers.
 - **Layout (as in slides.com):** the left rail has All decks, Preview, Undo/Redo, the save state,
   History, Layers, Export, Media and the slide's HTML; next to it, the palette adds text, shapes,
   images, pen, lines, arrows and maths. The slides run along the bottom, with new/duplicate/delete
@@ -30,15 +33,20 @@ Status: **alpha.** The clean-room rules are in [CLEANROOM.md](CLEANROOM.md).
 - **Maths:** double-click a maths block and type LaTeX; it renders as you type (KaTeX).
 - **Images:** drop or paste them onto a slide, or pick from the images of all your decks. Each
   image is saved into the deck's `media/` folder. The Design tab crops them.
+- **Videos:** the Video tool, or drop a WebM / MP4 on a slide: it fills the slide. A video plays
+  muted from its start each time its slide is shown, and stops on its last frame (Loop: off). The
+  Design tab sets its poster (shown before playback) and its print image (shown in PDFs; the
+  poster if none, else the clip's last frame).
 - **Lines, arrows, drawing:** L, A and P, then drag on the slide.
 - **Slides:** new, duplicate, delete, drag to reorder in the strip at the bottom. Copy blocks or slides (Ctrl+C) and paste
   them into another deck (Ctrl+V): their images come along.
 - **Zoom:** `+`, `−`, `0` (fit), or Ctrl + mouse wheel.
-- **Deck:** click its title to rename it. The deck menu (⋯) edits the current slide's HTML
+- **Deck:** click its title to rename it. Renaming a deck also renames its folder to match the new
+  title (`YYYY-MM_<slug>`, same month), and its history follows it. The deck menu (⋯) edits the current slide's HTML
   (Alt+Shift+H), shows the deck folder, or moves the deck to `.trash/` in your decks folder.
 - **Theme:** the sun/moon button switches the editor between light and dark.
-- **Export:** PDF, HTML folder, HTML zip or one self-contained HTML file, into any folder below
-  your export root.
+- **Export:** PDF, HTML folder, HTML zip or one self-contained HTML file (videos included, so it
+  can be large), into any folder below your export root.
 
 ## Install
 
@@ -59,7 +67,41 @@ decks_root  = "~/Documents/Slides/decks"          # one folder per deck
 export_root = "~/Documents/Slides"                # exports may only go below this folder
 mirror_root = "~/.local/share/opendeck/history"   # git history of each deck's index.html
 slidescom_user = ""                               # only for `opendeck migrate fetch`
+mirror_media = false                              # true: the history keeps each deck's media too
 ```
+
+Everything stays on your machine: the history is a local git repository that opendeck never
+pushes. Publishing (below) is off unless you configure it.
+
+## Publishing (optional)
+
+To put some talks online as a website (for instance GitHub Pages), set a git remote:
+
+```toml
+publish_remote  = "git@github.com:you/talks.git"  # turns publishing on
+publish_title   = "Talks"                         # heading of the list of talks
+publish_exclude = ["*_playground"]                # never published, even if made public
+publish_lfs     = false                           # true: media in Git LFS (needs git-lfs)
+```
+
+With `publish_lfs = true` the media go to Git LFS, which GitHub Pages does not serve from a
+branch: the snapshot then carries a GitHub Actions workflow that pulls them and deploys the site
+(Settings, Pages, Source: GitHub Actions). Its LFS objects are cached between deploys.
+
+Every deck is **private** until you make it public: with publishing on, each deck card in the
+list gets a Private / Public switch (or `opendeck visibility <deck> public|private`). Then:
+
+```bash
+opendeck publish            # snapshot the public decks and push them
+opendeck publish --no-push  # build the snapshot only
+```
+
+The snapshot is a separate branch of the history repository: a list of talks (`index.html`) and,
+for each public deck, a self-contained folder (page, runtime, the media it uses) that opens on its
+own. Its `.gitignore` ignores every deck folder except the public ones; opendeck rewrites it only
+when a deck changes visibility or a public deck is renamed. Before pushing, opendeck checks that
+the snapshot holds no other folder and refuses otherwise. The history of every edit is never
+pushed. For GitHub Pages: repository Settings, Pages, deploy from branch `main`, folder `/`.
 
 ## Moving decks out of slides.com
 

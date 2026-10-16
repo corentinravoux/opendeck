@@ -17,6 +17,8 @@ from ..config import Config
 from ..server.host import Host
 from ..server.thread import ServerThread
 
+ICON = Path(__file__).with_name("opendeck.svg")
+
 
 def run(config: Config, deck: str | None = None) -> int:
     if os.environ.get("OPENDECK_DEVTOOLS"):
@@ -72,7 +74,8 @@ def run(config: Config, deck: str | None = None) -> int:
             page.urlChanged.connect(lambda u: (QDesktopServices.openUrl(u), page.deleteLater()))
             return page
 
-    app = QApplication.instance() or QApplication(sys.argv[:1])
+    # argv[0] names the X11 window instance (WM_CLASS): "opendeck", as the desktop entry expects
+    app = QApplication.instance() or QApplication(["opendeck"])
     app.setApplicationName("opendeck")
     QGuiApplication.setDesktopFileName("opendeck")
     class Window(QMainWindow):
@@ -101,7 +104,7 @@ def run(config: Config, deck: str | None = None) -> int:
 
     window = Window()
     window.setWindowTitle("opendeck")
-    window.setWindowIcon(QIcon.fromTheme("x-office-presentation"))
+    window.setWindowIcon(QIcon(str(ICON)))
     host = QtHost(window)
     server = ServerThread(config, host).start()
 

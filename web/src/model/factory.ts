@@ -30,6 +30,29 @@ export function imageBlock(slide: Slide, src: string, left: number, top: number,
     `<img src="${esc(src)}"${nat}>`);
 }
 
+export interface VideoOptions {
+  /** image shown before playback (and in the editor) */
+  poster?: string | null;
+  /** image shown in the PDF / print (the clip's last frame); the poster otherwise */
+  print?: string | null;
+  loop?: boolean;
+  /** play from the start when the slide is entered (default true) */
+  autoplay?: boolean;
+}
+
+/** A video block: muted (so it may autoplay), inline, preloaded; see render/video.ts. */
+export function videoBlock(slide: Slide, src: string, left: number, top: number, width: number, height: number,
+  opts: VideoOptions = {}): Block {
+  const attrs = [`src="${esc(src)}"`];
+  if (opts.poster) attrs.push(`poster="${esc(opts.poster)}"`);
+  if (opts.print) attrs.push(`data-print="${esc(opts.print)}"`);
+  attrs.push("muted", "playsinline", 'preload="auto"');
+  if (opts.loop) attrs.push("loop");
+  if (opts.autoplay === false) attrs.push('data-autoplay="false"');
+  return base("video", slide, `width: ${r(width)}px; height: ${r(height)}px; left: ${r(left)}px; top: ${r(top)}px;`, [],
+    `<video ${attrs.join(" ")}></video>`);
+}
+
 export function textBlock(slide: Slide, left: number, top: number, width = 600, html = "<p>Text</p>"): Block {
   return base("text", slide, `height: auto; width: ${r(width)}px; left: ${r(left)}px; top: ${r(top)}px;`,
     [["data-placeholder-tag", "p"], ["data-placeholder-text", "Text"]], html);

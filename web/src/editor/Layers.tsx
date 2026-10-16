@@ -4,7 +4,7 @@ import type { Block } from "../model/types";
 import type { Editor } from "./store";
 import { Icon, type IconName } from "../app/icons";
 
-const ICON: Record<string, IconName> = { text: "text", math: "sigma", image: "image", shape: "shape", line: "line", drawing: "pen", group: "group" };
+const ICON: Record<string, IconName> = { text: "text", math: "sigma", image: "image", video: "video", shape: "shape", line: "line", drawing: "pen", group: "group" };
 
 function summary(b: Block): string {
   const name = b.outer.attrs.find(([k]) => k === "data-name")?.[1] ?? b.type;

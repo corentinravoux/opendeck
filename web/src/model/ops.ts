@@ -419,3 +419,41 @@ export function setOpacity(b: Block, percent: number): void {
   const p = Math.max(0, Math.min(100, percent));
   setStyle(b.wrapper, "opacity", p >= 100 ? null : String(p / 100));
 }
+
+// --- video ---------------------------------------------------------------------------------
+
+export interface VideoSpec { src: string; poster: string | null; print: string | null; loop: boolean; autoplay: boolean }
+
+function videoOf(b: Block): { tpl: HTMLTemplateElement; video: HTMLVideoElement | null } {
+  const tpl = document.createElement("template");
+  tpl.innerHTML = b.inner;
+  return { tpl, video: tpl.content.querySelector("video") };
+}
+
+export function videoSpec(b: Block): VideoSpec {
+  const { video } = videoOf(b);
+  return {
+    src: video?.getAttribute("src") ?? video?.querySelector("source")?.getAttribute("src") ?? "",
+    poster: video?.getAttribute("poster") || null,
+    print: video?.getAttribute("data-print") || null,
+    loop: !!video?.hasAttribute("loop"),
+    autoplay: video?.getAttribute("data-autoplay") !== "false",
+  };
+}
+
+/** Change the poster, print image, loop or autoplay of a video block (null removes an image). */
+export function setVideo(b: Block, patch: Partial<Omit<VideoSpec, "src">>): void {
+  const { tpl, video } = videoOf(b);
+  if (!video) return;
+  const set = (k: string, v: string | null) => (v === null ? video.removeAttribute(k) : video.setAttribute(k, v));
+  if (patch.poster !== undefined) set("poster", patch.poster);
+  if (patch.print !== undefined) set("data-print", patch.print);
+  if (patch.loop !== undefined) set("loop", patch.loop ? "" : null);
+  if (patch.autoplay !== undefined) set("data-autoplay", patch.autoplay ? null : "false");
+  // keep the markup's order: src, poster, data-print, then the rest
+  const all = [...video.attributes].map((at) => [at.name, at.value]);
+  const rank = (k: string) => { const i = ["src", "poster", "data-print"].indexOf(k); return i < 0 ? 3 : i; };
+  all.forEach(([k]) => video.removeAttribute(k));
+  all.sort((x, y) => rank(x[0]) - rank(y[0])).forEach(([k, v]) => video.setAttribute(k, v));
+  b.inner = tpl.innerHTML;
+}

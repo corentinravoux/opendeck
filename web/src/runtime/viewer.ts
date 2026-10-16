@@ -3,11 +3,14 @@
 //   ?print-pdf         every slide as one page of the deck's size (used by the PDF export)
 //   ?slide=n&static    slide n (0-based) at scale 1, no controls (thumbnails, tests)
 // html[data-od-ready] is set once fonts, images and maths are done.
+// Videos (render/video.ts) play from the start when their slide is entered; print mode shows
+// their still image instead.
 import "katex/dist/katex.min.css";
 import "./fonts.css";
 import "../render/base.css";
 import "../render/theme/presets.css";
 import { hydrateSection, readMeta, type DeckMeta } from "../render/hydrate";
+import { enterSlide, leaveSlide, printStills, togglePlay, videosIn } from "../render/video";
 
 function slideNumber(n: number): HTMLElement {
   const el = document.createElement("div");
@@ -16,14 +19,15 @@ function slideNumber(n: number): HTMLElement {
   return el;
 }
 
-async function ready(sections: HTMLElement[]): Promise<void> {
+async function ready(sections: HTMLElement[], pending: Promise<void>[] = []): Promise<void> {
+  await Promise.all(pending);
   const images = sections.flatMap((s) => [...s.querySelectorAll("img")]);
   await Promise.all(images.map((img) => img.decode().catch(() => undefined)));
   await document.fonts.ready;
   document.documentElement.dataset.odReady = "1";
 }
 
-function printMode(meta: DeckMeta, sections: HTMLElement[]): void {
+function printMode(meta: DeckMeta, sections: HTMLElement[]): Promise<void>[] {
   document.documentElement.classList.add("od-print");
   const page = document.createElement("style");
   page.textContent = `@page { size: ${meta.width}px ${meta.height}px; margin: 0; }`;
@@ -34,6 +38,7 @@ function printMode(meta: DeckMeta, sections: HTMLElement[]): void {
     n += 1;
     if (meta.slide_number) s.appendChild(slideNumber(n));
   }
+  return sections.map((s) => printStills(s));
 }
 
 function viewMode(meta: DeckMeta, sections: HTMLElement[], fixed: number | null): void {
@@ -43,7 +48,7 @@ function viewMode(meta: DeckMeta, sections: HTMLElement[], fixed: number | null)
   const slides = document.querySelector<HTMLElement>(".reveal .slides")!;
   const badge = slideNumber(1);
   if (meta.slide_number && fixed === null) reveal.appendChild(badge);
-  let current = 0;
+  let current = -1;
 
   const fit = () => {
     if (fixed !== null) {
@@ -55,8 +60,13 @@ function viewMode(meta: DeckMeta, sections: HTMLElement[], fixed: number | null)
     slides.style.transform = `translate(${(innerWidth - meta.width * scale) / 2}px, ${(innerHeight - meta.height * scale) / 2}px) scale(${scale})`;
   };
   const show = (i: number) => {
+    const previous = current;
     current = Math.max(0, Math.min(sections.length - 1, i));
     sections.forEach((s, k) => s.classList.toggle("od-current", k === current));
+    if (fixed === null && current !== previous) {
+      if (previous >= 0) leaveSlide(sections[previous]);
+      enterSlide(sections[current]);
+    }
     badge.textContent = String(current + 1);
     if (fixed === null && location.hash !== `#/${current}`) history.replaceState(null, "", `#/${current}`);
   };
@@ -66,6 +76,7 @@ function viewMode(meta: DeckMeta, sections: HTMLElement[], fixed: number | null)
   show(fixed ?? fromHash());
   if (fixed !== null) return;
   addEventListener("resize", fit);
+  for (const v of sections.flatMap((s) => videosIn(s))) v.addEventListener("click", () => togglePlay(v));
   addEventListener("hashchange", () => show(fromHash()));
   addEventListener("keydown", (e) => {
     const step: Record<string, number> = {
@@ -89,9 +100,10 @@ function main(): void {
   const sections = [...slides.querySelectorAll<HTMLElement>(":scope > section")];
   sections.forEach((s) => hydrateSection(s, meta));
   const params = new URLSearchParams(location.search);
-  if (params.has("print-pdf")) printMode(meta, sections);
+  let pending: Promise<void>[] = [];
+  if (params.has("print-pdf")) pending = printMode(meta, sections);
   else viewMode(meta, sections, params.has("static") ? Number(params.get("slide") ?? 0) : null);
-  void ready(sections);
+  void ready(sections, pending);
 }
 
 if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", main);

@@ -8,12 +8,13 @@ import { Inspector } from "../editor/Inspector";
 import { History } from "../editor/History";
 import { Library } from "../editor/Library";
 import { SlideHtml } from "../editor/SlideHtml";
-import { imageFiles, insertImages } from "../editor/media";
+import { insertMedia, mediaFiles } from "../editor/media";
 import { onCopy, onPaste } from "../editor/clipboard";
 import { addSlide, duplicateSlide, moveSlide, removeSlide } from "../model/ops";
 import { mathBlock, shapeBlock, textBlock } from "../model/factory";
 import type { Block, Slide } from "../model/types";
 import { openEditor, type Editor, type SaveState } from "../editor/store";
+import { snapGuides, toggleSnapGuides } from "../editor/prefs";
 import { slideHtml } from "../model/serialize";
 import { api, type Deck } from "./api";
 import { ExportDialog } from "./ExportDialog";
@@ -58,17 +59,34 @@ function SlideThumb({ html, deck, n, active, onClick }: {
 
 const SAVE_LABEL: Record<SaveState, string> = { saved: "Saved", dirty: "Edited", saving: "Saving", conflict: "Changed elsewhere", error: "Not saved" };
 
-/** The deck title in the top bar: click to rename it in place. */
+/** The deck title in the top bar: click to rename the deck in place (its folder follows). */
 function DeckTitle({ editor, name, onRenamed, editing, setEditing }: {
-  editor: Editor; name: string; onRenamed: () => void; editing: boolean; setEditing: (v: boolean) => void;
+  editor: Editor; name: string; onRenamed: (name: string) => void; editing: boolean; setEditing: (v: boolean) => void;
 }) {
   const [value, setValue] = useState(editor.deck.meta.title);
   const input = useRef<HTMLInputElement>(null);
-  useEffect(() => { if (editing) { setValue(editor.deck.meta.title); input.current?.select(); } }, [editing]);
+  const open = useRef(false); // Enter, then the blur of the removed input: rename once
+  // entering edit mode is handled during render, not in an effect: an effect runs after paint and
+  // would reset what was already typed (fast typing, tests) back to the old title
+  const was = useRef(false);
+  if (editing !== was.current) {
+    was.current = editing;
+    open.current = editing;
+    if (editing && value !== editor.deck.meta.title) setValue(editor.deck.meta.title);
+  }
+  useEffect(() => { if (editing) input.current?.select(); }, [editing]);
   const done = async (keep: boolean) => {
+    if (!open.current) return;
+    open.current = false;
     setEditing(false);
     const t = value.trim();
-    if (keep && t && t !== editor.deck.meta.title) { await editor.setMeta({ title: t }); onRenamed(); }
+    if (!keep || !t || t === editor.deck.meta.title) return;
+    try {
+      const renamed = await editor.rename(t);
+      if (renamed) onRenamed(renamed);
+    } catch (e) {
+      alert(`The deck was not renamed: ${(e as Error).message}`);
+    }
   };
   if (editing) {
     return (
@@ -79,7 +97,7 @@ function DeckTitle({ editor, name, onRenamed, editing, setEditing }: {
     );
   }
   return (
-    <button class="od-deck-title" title={`${name}: click to rename`} onClick={() => setEditing(true)}>{editor.deck.meta.title}</button>
+    <button class="od-deck-title" title={`${name}: click to rename (the folder follows the title)`} onClick={() => setEditing(true)}>{editor.deck.meta.title}</button>
   );
 }
 
@@ -114,7 +132,11 @@ export function DeckView({ name }: { name: string }) {
       setEditor(ed);
       document.title = `${ed.deck.meta.title} · opendeck`;
       window.opendeckFlush = async () => { await ed.save(); return ed.saveState.value === "saved"; };
-    }).catch((e) => setError(String(e.message ?? e)));
+    }).catch((e) => {
+      // renamed in another window: follow it to its new name
+      if (e.moved) location.replace(`#/deck/${encodeURIComponent(e.moved)}`);
+      else setError(String(e.message ?? e));
+    });
     return () => { window.opendeckFlush = undefined; };
   }, [name, reloads]);
 
@@ -139,8 +161,8 @@ export function DeckView({ name }: { name: string }) {
       const data = e.clipboardData;
       void onPaste(editor, data).then((done) => {
         if (done) return;
-        const files = imageFiles(data);
-        if (files.length) void insertImages(editor, files, editor.deck.meta.width / 2, editor.deck.meta.height / 2);
+        const files = mediaFiles(data);
+        if (files.length) void insertMedia(editor, files, editor.deck.meta.width / 2, editor.deck.meta.height / 2);
       });
     };
     const copyHandler = (cut: boolean) => (e: ClipboardEvent) => {
@@ -209,12 +231,12 @@ export function DeckView({ name }: { name: string }) {
     setDragFrom(null);
   };
 
-  const pickImages = () => {
+  const pickMedia = (accept: string) => {
     const input = document.createElement("input");
     input.type = "file";
-    input.accept = "image/*";
+    input.accept = accept;
     input.multiple = true;
-    input.onchange = () => editor && void insertImages(editor, [...(input.files ?? [])], editor.deck.meta.width / 2, editor.deck.meta.height / 2);
+    input.onchange = () => editor && void insertMedia(editor, [...(input.files ?? [])], editor.deck.meta.width / 2, editor.deck.meta.height / 2);
     input.click();
   };
 
@@ -279,7 +301,7 @@ export function DeckView({ name }: { name: string }) {
         <span class="od-rail-fill" />
         <ThemeToggle />
         <Menu label="Deck" items={[
-          { label: "Rename deck", icon: "text", run: () => setRenaming(true) },
+          { label: "Rename deck", icon: "rename", run: () => setRenaming(true) },
           { label: "Show deck folder", icon: "folder", run: () => void api.health().then((h) => api.reveal(`${h.decks_root}/${name}`)) },
           { label: "Move deck to trash", icon: "trash", danger: true, run: () => void trash() },
         ]} />
@@ -289,7 +311,8 @@ export function DeckView({ name }: { name: string }) {
         <div class="od-blocks">
           <Block icon="text" label="Text" aria="Add text" tip="T" onClick={() => { insert((s) => textBlock(s, 212, 250)); editor.pendingEdit.value = editor.selection.value[0]; }} />
           <Block icon="shape" label="Shape" aria="Add shape" onClick={() => insert((s) => shapeBlock(s, 412, 228))} />
-          <Block icon="image" label="Image" aria="Add image" tip="Or drop / paste one on the slide" onClick={pickImages} />
+          <Block icon="image" label="Image" aria="Add image" tip="Or drop / paste one on the slide" onClick={() => pickMedia("image/*")} />
+          <Block icon="video" label="Video" aria="Add video" tip="WebM or MP4; or drop one on the slide" onClick={() => pickMedia("video/webm,video/mp4,.webm,.mp4")} />
           <Block icon="pen" label="Pen" aria="Draw freehand" tip="P, Esc to stop" on={tool === "pen"} onClick={() => setTool("pen")} />
           <Block icon="line" label="Line" aria="Draw a line" tip="L, then drag" on={tool === "line"} onClick={() => setTool("line")} />
           <Block icon="arrow" label="Arrow" aria="Draw an arrow" tip="A, then drag" on={tool === "arrow"} onClick={() => setTool("arrow")} />
@@ -299,10 +322,17 @@ export function DeckView({ name }: { name: string }) {
 
       <main class="od-center">
         <header class="od-center-head">
-          <DeckTitle editor={editor} name={name} editing={renaming} setEditing={setRenaming} onRenamed={() => setReloads((n) => n + 1)} />
+          <DeckTitle editor={editor} name={name} editing={renaming} setEditing={setRenaming} onRenamed={(to) => {
+            // the page changed on disk (new title, new etag): reopen it, under its new name if it has one
+            if (to === name) setReloads((n) => n + 1);
+            else location.replace(`#/deck/${encodeURIComponent(to)}`);
+          }} />
           <span class={`od-save-text od-save-${state}`} role="status">{SAVE_LABEL[state]}</span>
           <span class="od-head-fill" />
           <span class="od-status">Slide {current + 1} <span>of {slides.length}</span></span>
+          <IconButton icon="magnet" label="Snap to alignment guides" size={16} pressed={snapGuides.value}
+            tip={`Snap to alignment guides: ${snapGuides.value ? "on" : "off"} (hold Alt while dragging to move freely)`}
+            onClick={toggleSnapGuides} />
           <div class="od-zoom" role="group" aria-label="Zoom">
             <IconButton icon="minus" label="Zoom out" tip="Zoom out (−)" size={14} onClick={() => (editor.zoom.value = Math.max(0.25, zoom / 1.25))} />
             <button class="od-zoom-val" data-tip="Fit to the window (0)" onClick={() => (editor.zoom.value = 1)}>

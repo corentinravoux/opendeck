@@ -104,6 +104,16 @@ export class Editor {
     Object.assign(this.deck.meta, patch);
   }
 
+  /** Give the deck a new title; its folder is renamed to match (YYYY-MM_<slug>), and its history
+   *  follows. Saves first. Returns the deck's name afterwards (the caller reopens the deck under it,
+   *  since its etag changed), or null when the deck could not be saved first. */
+  async rename(title: string): Promise<string | null> {
+    this.flushText?.();
+    await this.save();
+    if (this.saveState.value !== "saved") return null;
+    return (await api.renameDeck(this.name, title)).name;
+  }
+
   /** Write the deck now; `commit` also records it in the history mirror (Ctrl+S). */
   async save(commit = false): Promise<void> {
     this.flushText?.();
@@ -122,7 +132,8 @@ export class Editor {
           keepalive: slides.length < 60_000,
         });
         const body = await r.json();
-        if (r.status === 409) {
+        if (r.status === 409 || (r.status === 404 && body.moved)) {
+          // 404 + moved: another window renamed the deck; reloading opens it under its new name
           this.saveState.value = "conflict";
           this.message.value = body.error;
           return;
