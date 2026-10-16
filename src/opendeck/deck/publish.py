@@ -6,7 +6,9 @@ separate branch, `public`, whose commits are snapshots of the published decks:
     .gitignore            deny by default: only the decks made public are listed (see below)
     index.html            the list of talks
     .nojekyll             served as plain files (GitHub Pages: deploy from the branch, root)
+    talks.json            the published talks, for a website to list them (title, date, thumbnail)
     <deck>/index.html     each deck self-contained: it opens on its own, online or downloaded
+    <deck>/thumb.webp     its first slide, rendered by the system Chrome (when there is one)
     <deck>/lib/           the deck runtime
     <deck>/media/         the media the deck uses
 
@@ -23,6 +25,7 @@ not rehashed. Each snapshot's parent is the last pushed one: nothing unpushed pi
 from __future__ import annotations
 
 import fnmatch
+import shlex
 import os
 import shutil
 import subprocess
@@ -188,9 +191,83 @@ a.talk:hover .title {{ color: var(--accent); }}
 """
 
 
+THUMB_WIDTH = 640
+
+
+def redirect_page(url: str, title: str) -> str:
+    """The root page when the talks are listed elsewhere (publish_index_url): a redirect."""
+    u = escape(url, quote=True)
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{escape(title)}</title>
+<link rel="canonical" href="{u}">
+<meta http-equiv="refresh" content="0; url={u}">
+</head>
+<body><p><a href="{u}">{escape(title)}</a></p></body>
+</html>
+"""
+
+
+def talks_json(decks: list[store.DeckInfo], thumbs: dict[str, str], title: str) -> str:
+    import json
+
+    # no timestamp: an unchanged deck list must give an unchanged snapshot
+    talks = [{"name": d.name, "title": d.title, "date": d.name[:7], "slides": d.slides,
+              "url": f"{d.name}/index.html", "thumb": thumbs.get(d.name)} for d in decks]
+    return json.dumps({"title": title, "talks": talks}, ensure_ascii=False, indent=1) + "\n"
+
+
+def _thumbnails(stage: Path, decks: list[store.DeckInfo], cache_file: Path) -> dict[str, str]:
+    """<deck>/thumb.webp for each deck: its first slide in the deck's own viewer, re-rendered only
+    when the page changed. Without Playwright and a system Chrome, decks simply have no thumbnail."""
+    import hashlib
+    import io
+    import json
+
+    cache = json.loads(cache_file.read_text()) if cache_file.is_file() else {}
+    out, todo = {}, []
+    for d in decks:
+        digest = hashlib.sha256((stage / d.name / "index.html").read_bytes()).hexdigest()
+        if cache.get(d.name) == digest and (stage / d.name / "thumb.webp").is_file():
+            out[d.name] = f"{d.name}/thumb.webp"
+        else:
+            todo.append((d, digest))
+    if todo:
+        try:
+            from PIL import Image
+            from playwright.sync_api import sync_playwright
+
+            with sync_playwright() as p:
+                browser = p.chromium.launch(channel="chrome", headless=True)
+                try:
+                    for d, digest in todo:
+                        page = browser.new_page(viewport={"width": d.width, "height": d.height})
+                        try:
+                            page.goto((stage / d.name / "index.html").as_uri() + "?static")
+                            page.wait_for_selector("html[data-od-ready]", state="attached", timeout=60000)
+                            page.wait_for_timeout(300)
+                            img = Image.open(io.BytesIO(page.screenshot())).convert("RGB")
+                            img = img.resize((THUMB_WIDTH, round(THUMB_WIDTH * d.height / d.width)), Image.LANCZOS)
+                            img.save(stage / d.name / "thumb.webp", "WEBP", quality=82, method=6)
+                            cache[d.name] = digest
+                            out[d.name] = f"{d.name}/thumb.webp"
+                        except Exception:
+                            pass
+                        finally:
+                            page.close()
+                finally:
+                    browser.close()
+        except Exception:
+            pass
+    cache_file.write_text(json.dumps(cache, indent=1))
+    return out
+
+
 def _stage(stage: Path, decks_root: Path, decks: list[store.DeckInfo], mirror_gitignore: Path,
-           title: str = "Talks", lfs: bool = False) -> None:
-    keep = {d.name for d in decks} | {"index.html", ".nojekyll", "README.md", ".gitignore"}
+           title: str = "Talks", lfs: bool = False, index_url: str = "") -> None:
+    keep = {d.name for d in decks} | {"index.html", "talks.json", ".nojekyll", "README.md", ".gitignore"}
     if lfs:
         keep |= {".gitattributes", ".github"}
     stage.mkdir(parents=True, exist_ok=True)
@@ -204,7 +281,10 @@ def _stage(stage: Path, decks_root: Path, decks: list[store.DeckInfo], mirror_gi
         (dst / "index.html").write_text(page, encoding="utf-8")
         versioning._sync_media(page, src, dst)
         runtime.install(dst)
-    (stage / "index.html").write_text(talk_index(decks, title), encoding="utf-8")
+    thumbs = _thumbnails(stage, decks, stage.parent / f"{STAGE}.thumbs.json")
+    (stage / "talks.json").write_text(talks_json(decks, thumbs, title), encoding="utf-8")
+    page = redirect_page(index_url, title) if index_url else talk_index(decks, title)
+    (stage / "index.html").write_text(page, encoding="utf-8")
     (stage / ".nojekyll").write_text("", encoding="utf-8")
     shutil.copyfile(mirror_gitignore, stage / ".gitignore")
     if lfs:
@@ -220,7 +300,7 @@ def _stage(stage: Path, decks_root: Path, decks: list[store.DeckInfo], mirror_gi
 
 
 def build(decks_root: Path, mirror: Path, exclude: tuple[str, ...] | list[str] = (),
-          title: str = "Talks", lfs: bool = False) -> tuple[str, list[str], bool]:
+          title: str = "Talks", lfs: bool = False, index_url: str = "") -> tuple[str, list[str], bool]:
     """Commit every deck to the history, then snapshot the public ones on branch `public`.
     Returns (commit, published deck names, whether the snapshot changed)."""
     all_decks = store.list_decks(decks_root)
@@ -234,8 +314,9 @@ def build(decks_root: Path, mirror: Path, exclude: tuple[str, ...] | list[str] =
     stage = git_dir / STAGE
     if lfs:
         # the clean filter turns media into LFS pointers as they are staged; the pre-push hook uploads them
-        _git(mirror, "lfs", "install", "--local")
-    _stage(stage, decks_root, decks, mirror / GITIGNORE, title, lfs)
+        _git(mirror, "lfs", "install", "--local", "--skip-repo")   # filters only: our hook calls git-lfs
+    install_hook(mirror)                     # after git-lfs, which writes its own pre-push hook
+    _stage(stage, decks_root, decks, mirror / GITIGNORE, title, lfs, index_url)
     env = {"GIT_INDEX_FILE": str(git_dir / f"{STAGE}.index")}
     work = ["--git-dir", str(git_dir), "--work-tree", str(stage)]
     _git(mirror, *work, "add", "-A", ".", env=env)
@@ -249,6 +330,37 @@ def build(decks_root: Path, mirror: Path, exclude: tuple[str, ...] | list[str] =
     commit = _git(mirror, "commit-tree", tree, *parent, "-m", f"publish {len(decks)} decks")
     _git(mirror, "update-ref", f"refs/heads/{BRANCH}", commit)
     return commit, [d.name for d in decks], True
+
+
+HOOK = """\
+#!/bin/sh
+# Written by opendeck. Only the website snapshot (branch {branch}) may leave this repository, and
+# only when it holds public decks alone: the history of every deck stays on this machine.
+input=$(cat)
+zero=0000000000000000000000000000000000000000
+echo "$input" | while read -r local_ref local_sha remote_ref remote_sha; do
+  [ -z "$local_ref" ] && continue
+  [ "$local_sha" = "$zero" ] && continue
+  if [ "$local_ref" != "refs/heads/{branch}" ]; then
+    echo "opendeck: refusing to push $local_ref; only the website snapshot (branch {branch}) is pushed" >&2
+    exit 1
+  fi
+done || exit 1
+{python} -c "import sys; from pathlib import Path; from opendeck.deck import publish; publish.check(Path(sys.argv[1]))" "$(git rev-parse --show-toplevel)" || exit 1
+if command -v git-lfs >/dev/null 2>&1; then
+  echo "$input" | git lfs pre-push "$@"
+fi
+"""
+
+
+def install_hook(mirror: Path) -> None:
+    """The pre-push hook of the mirror: only branch `public`, only public decks (then git-lfs)."""
+    import sys
+
+    hook = mirror / ".git" / "hooks" / "pre-push"
+    hook.parent.mkdir(parents=True, exist_ok=True)
+    hook.write_text(HOOK.format(branch=BRANCH, python=shlex.quote(sys.executable)), encoding="utf-8")
+    hook.chmod(0o755)
 
 
 class PrivateDeckError(RuntimeError):
@@ -275,5 +387,6 @@ def check(mirror: Path) -> str:
 def push(mirror: Path, remote: str, branch: str = "main") -> None:
     """Push the latest snapshot (only branch `public`, never the history) to `branch` of the remote."""
     tip = check(mirror)
-    subprocess.run(["git", "-C", str(mirror), "push", remote, f"{tip}:refs/heads/{branch}"], check=True)
+    install_hook(mirror)
+    subprocess.run(["git", "-C", str(mirror), "push", remote, f"refs/heads/{BRANCH}:refs/heads/{branch}"], check=True)
     _git(mirror, "update-ref", PUSHED, tip)

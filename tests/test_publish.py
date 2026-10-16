@@ -198,3 +198,49 @@ def test_lfs_snapshot_holds_pointers_and_a_pages_workflow(tmp_path):
     assert "deploy-pages" in git(mirror, "show", f"{commit}:.github/workflows/pages.yml")
     assert "2024-12_talk/media/a.png" in git(mirror, "lfs", "ls-files", "--name-only", commit)
     assert publish.check(mirror) == commit                          # .github is not a deck folder
+
+
+@pytest.mark.skipif(not (runtime.BUILD / "opendeck.js").is_file(), reason="runtime not built")
+def test_pre_push_hook_lets_only_the_public_snapshot_out(tmp_path):
+    mirror, root, remote = tmp_path / "mirror", tmp_path / "decks", tmp_path / "remote.git"
+    root.mkdir()
+    deck(root, "2024-12_talk", "A talk")
+    deck(root, "2025-01_internal", "Internal")
+    subprocess.run(["git", "init", "-q", "--bare", str(remote)], check=True)
+    publish.set_public(mirror, "2024-12_talk", True)
+    publish.build(root, mirror)
+    head = git(mirror, "symbolic-ref", "--short", "HEAD").strip()
+    # a hand-typed push of the history (every deck, private ones included) is refused
+    r = subprocess.run(["git", "-C", str(mirror), "push", str(remote), f"{head}:refs/heads/main"],
+                       capture_output=True, text=True)
+    assert r.returncode != 0 and "only the website snapshot" in r.stderr
+    # so is a snapshot holding a deck made private since it was built
+    publish.set_public(mirror, "2024-12_talk", False)
+    r = subprocess.run(["git", "-C", str(mirror), "push", str(remote), "public:refs/heads/main"],
+                       capture_output=True, text=True)
+    assert r.returncode != 0 and "not public" in r.stderr
+    assert git(remote, "branch", "--list").strip() == ""
+    publish.set_public(mirror, "2024-12_talk", True)
+    publish.push(mirror, str(remote))
+    assert git(remote, "branch", "--list").split() == ["main"]
+    assert "internal" not in git(remote, "log", "--name-only", "--format=", "main")
+
+
+@pytest.mark.skipif(not (runtime.BUILD / "opendeck.js").is_file(), reason="runtime not built")
+def test_talks_json_thumbnails_and_redirect(tmp_path):
+    import json
+
+    mirror, root = tmp_path / "mirror", tmp_path / "decks"
+    root.mkdir()
+    deck(root, "2024-12_talk", "A talk")
+    publish.set_public(mirror, "2024-12_talk", True)
+    commit, _, _ = publish.build(root, mirror, title="Talks", index_url="https://example.org/talks.html")
+    data = json.loads(git(mirror, "show", f"{commit}:talks.json"))
+    talk = data["talks"][0]
+    assert (talk["name"], talk["title"], talk["date"], talk["url"]) == (
+        "2024-12_talk", "A talk", "2024-12", "2024-12_talk/index.html")
+    assert 'http-equiv="refresh" content="0; url=https://example.org/talks.html"' in git(mirror, "show", f"{commit}:index.html")
+    if talk["thumb"]:                       # rendered only where a system Chrome is installed
+        assert talk["thumb"] == "2024-12_talk/thumb.webp"
+        assert "2024-12_talk/thumb.webp" in git(mirror, "ls-tree", "-r", "--name-only", commit)
+        assert publish.check(mirror) == commit

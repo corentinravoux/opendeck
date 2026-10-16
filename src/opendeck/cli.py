@@ -136,7 +136,7 @@ def _publish(args) -> int:
         sys.exit("publishing is off: set publish_remote in the config file (or pass --remote / --no-push)")
     versioning.MIRROR_MEDIA = config.mirror_media
     commit, names, changed = publish.build(config.decks_root, config.mirror_root, config.publish_exclude,
-                                           config.publish_title, config.publish_lfs)
+                                           config.publish_title, config.publish_lfs, config.publish_index_url)
     print(f"{len(names)} decks in snapshot {commit[:7]}" + ("" if changed else " (unchanged)"))
     remote = args.remote or config.publish_remote
     if args.no_push or not remote:

@@ -14,6 +14,7 @@ Optional, off unless set: keep the media in the history mirror too, and publish 
     publish_title = "Talks"                     # heading of the published list of talks
     publish_exclude = ["*_playground"]          # deck folders (glob patterns) never published, even public
     publish_lfs = true                          # media in Git LFS; the site is deployed by a GitHub Actions workflow
+    publish_index_url = "https://you.example/talks.html"   # the talks are listed there: the root redirects
 """
 
 from __future__ import annotations
@@ -38,6 +39,7 @@ class Config:
     publish_title: str = "Talks"
     publish_exclude: tuple[str, ...] = ()
     publish_lfs: bool = False
+    publish_index_url: str = ""
 
     @property
     def publishing(self) -> bool:
