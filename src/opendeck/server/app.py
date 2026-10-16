@@ -102,7 +102,7 @@ def create_app(config: Config, host: Host | None = None, allowed_hosts: set[str]
         title = str(body.get("title", "")).strip()
         if not title:
             return error(400, "a new deck needs a title")
-        d = await run_in_threadpool(store.create, config.decks_root, title)
+        d = await run_in_threadpool(store.create, config.decks_root, title, None, config.mirror_root)
         await run_in_threadpool(versioning.commit, config.mirror_root, d, f"{d.name}: new deck")
         return JSONResponse({"name": d.name})
 
@@ -114,7 +114,7 @@ def create_app(config: Config, host: Host | None = None, allowed_hosts: set[str]
         title = str(body.get("title", "")).strip()
         if not title:
             return error(400, "the copy needs a title")
-        new = await run_in_threadpool(store.duplicate, config.decks_root, d, title)
+        new = await run_in_threadpool(store.duplicate, config.decks_root, d, title, None, config.mirror_root)
         await run_in_threadpool(versioning.commit, config.mirror_root, new, f"{new.name}: copy of {d.name}")
         # a new deck is private; a copy takes the visibility of its original
         if (config.publishing and d.name in publish.public_decks(config.mirror_root)
@@ -178,6 +178,9 @@ def create_app(config: Config, host: Host | None = None, allowed_hosts: set[str]
             return err
         await run_in_threadpool(historian.flush, time.time())
         where = await run_in_threadpool(store.trash, config.decks_root, d)
+        if (config.mirror_root / publish.GITIGNORE).is_file():
+            # a trashed deck is no longer public, whatever comes to use its folder name
+            await run_in_threadpool(publish.forget, config.mirror_root, [d.name])
         return JSONResponse({"trash": str(where)})
 
     async def upload(request: Request):

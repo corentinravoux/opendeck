@@ -35,6 +35,8 @@ export class Editor {
   private etag: string;
   private timer: number | undefined;
   private saving: Promise<void> | null = null;
+  /** set while the deck is renamed: edits are refused, since the editor is replaced afterwards */
+  private renaming = false;
 
   constructor(deck: Deck) {
     this.name = deck.name;
@@ -50,6 +52,7 @@ export class Editor {
   /** Apply an edit to the document, recording it for undo. Edits with the same `key` within
    *  600 ms are merged into one undo step (dragging, nudging with the arrow keys). */
   edit(label: string, recipe: (doc: Doc) => void, key?: string): void {
+    if (this.renaming) return;
     const [next, patches, inverse] = produceWithPatches(this.doc.value, recipe);
     if (!patches.length) return;
     this.doc.value = next;
@@ -68,6 +71,7 @@ export class Editor {
   }
 
   undo(): void {
+    if (this.renaming) return;
     const e = this.undoStack.pop();
     if (!e) return;
     this.doc.value = applyPatches(this.doc.value, e.inverse);
@@ -77,6 +81,7 @@ export class Editor {
   }
 
   redo(): void {
+    if (this.renaming) return;
     const e = this.redoStack.pop();
     if (!e) return;
     this.doc.value = applyPatches(this.doc.value, e.patches);
@@ -106,12 +111,20 @@ export class Editor {
 
   /** Give the deck a new title; its folder is renamed to match (YYYY-MM_<slug>), and its history
    *  follows. Saves first. Returns the deck's name afterwards (the caller reopens the deck under it,
-   *  since its etag changed), or null when the deck could not be saved first. */
+   *  since its etag changed), or null when the deck could not be saved first. From the save on,
+   *  the document takes no edit: one made then would be lost when the deck is reopened. After a
+   *  rename it stays so, since this editor is replaced; after a failure it is editable again. */
   async rename(title: string): Promise<string | null> {
     this.flushText?.();
-    await this.save();
-    if (this.saveState.value !== "saved") return null;
-    return (await api.renameDeck(this.name, title)).name;
+    this.renaming = true;
+    try {
+      await this.save();
+      if (this.saveState.value !== "saved") { this.renaming = false; return null; }
+      return (await api.renameDeck(this.name, title)).name;
+    } catch (err) {
+      this.renaming = false;
+      throw err;
+    }
   }
 
   /** Write the deck now; `commit` also records it in the history mirror (Ctrl+S). */

@@ -17,9 +17,13 @@ export function absolutiseMedia(html: string, deck: string): string {
   return html.replace(/(\s(?:src|poster|data-print|data-background-image)=")(media\/)/g, `$1${base}$2`);
 }
 
-/** Videos in the editor and thumbnails show their poster (or first frame) and do not buffer the clip. */
+/** Videos in the editor and thumbnails show their poster (or first frame): they never play on
+ *  their own (a native `autoplay`, as an import may carry, is dropped) and do not buffer the clip.
+ *  Our own data-autoplay is kept: it is the deck's setting, read by the runtime only. */
 export function stillVideos(html: string): string {
-  return html.replace(/(<video\b[^>]*?\spreload=")[^"]*"/g, '$1metadata"');
+  const attr = /\s(?:autoplay|preload)(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'=<>`]+))?(?=[\s/>])/gi;
+  return html.replace(/<video\b(?:"[^"]*"|'[^']*'|[^'">])*>/gi,
+    (tag) => tag.replace(attr, "").replace(/^<video\b/i, '<video preload="metadata"'));
 }
 
 /**

@@ -8,10 +8,13 @@ pushes anything, and never this history branch, only website snapshots.
 
 from __future__ import annotations
 
+import fcntl
 import os
 import re
 import shutil
 import subprocess
+import threading
+from contextlib import contextmanager
 from pathlib import Path
 
 IDENTITY = ["-c", "user.name=opendeck", "-c", "user.email=opendeck@localhost"]
@@ -23,17 +26,41 @@ def _git(mirror: Path, *args: str, check: bool = True) -> subprocess.CompletedPr
                           check=check, capture_output=True, text=True)
 
 
-def ensure_repo(mirror: Path) -> None:
-    if (mirror / ".git").is_dir():
-        return
+_held = threading.local()
+
+
+@contextmanager
+def locked(mirror: Path, name: str = "opendeck.lock"):
+    """Hold a lock of the mirror (<mirror>/.git/<name>): one writer at a time, across threads and
+    processes (the server's thread pool, the command line). The default lock guards the history
+    index and the publish whitelist. Re-entrant within a thread."""
     mirror.mkdir(parents=True, exist_ok=True)
-    _git(mirror, "init", "-q")
-    (mirror / "README.md").write_text(
-        "# opendeck history\n\nEach folder mirrors one deck's `index.html` and the media it uses. "
-        "Written and committed by opendeck.\n",
-        encoding="utf-8")
-    _git(mirror, "add", "README.md")
-    _git(mirror, "commit", "-q", "-m", "start the opendeck history mirror")
+    if not (mirror / ".git").is_dir():
+        _git(mirror, "init", "-q")
+    path = (mirror / ".git" / name).resolve()
+    held = _held.__dict__.setdefault("paths", set())
+    if path in held:
+        yield
+        return
+    with open(path, "a") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)    # per open file: threads of one process exclude each other too
+        held.add(path)
+        try:
+            yield
+        finally:
+            held.discard(path)
+
+
+def ensure_repo(mirror: Path) -> None:
+    with locked(mirror):
+        if _git(mirror, "rev-parse", "--verify", "-q", "HEAD", check=False).returncode == 0:
+            return
+        (mirror / "README.md").write_text(
+            "# opendeck history\n\nEach folder mirrors one deck's `index.html` and the media it uses. "
+            "Written and committed by opendeck.\n",
+            encoding="utf-8")
+        _git(mirror, "add", "README.md")
+        _git(mirror, "commit", "-q", "-m", "start the opendeck history mirror")
 
 
 # any quoted media path: src, poster, data-print, data-background-image, url(...)
@@ -63,18 +90,19 @@ def _sync_media(page: str, deck_dir: Path, target: Path) -> None:
 def commit(mirror: Path, deck_dir: Path, message: str, media: bool | None = None) -> bool:
     """Copy <deck>/index.html (and, with media or MIRROR_MEDIA, the media it uses) into the mirror
     and commit. False if nothing changed."""
-    ensure_repo(mirror)
-    target = mirror / deck_dir.name
-    target.mkdir(parents=True, exist_ok=True)
-    page = (deck_dir / "index.html").read_text(encoding="utf-8")
-    shutil.copyfile(deck_dir / "index.html", target / "index.html")
-    if MIRROR_MEDIA if media is None else media:
-        _sync_media(page, deck_dir, target)
-    _git(mirror, "add", "-A", "--", deck_dir.name)
-    if _git(mirror, "diff", "--cached", "--quiet", check=False).returncode == 0:
-        return False
-    _git(mirror, "commit", "-q", "-m", message)
-    return True
+    with locked(mirror):
+        ensure_repo(mirror)
+        target = mirror / deck_dir.name
+        target.mkdir(parents=True, exist_ok=True)
+        page = (deck_dir / "index.html").read_text(encoding="utf-8")
+        shutil.copyfile(deck_dir / "index.html", target / "index.html")
+        if MIRROR_MEDIA if media is None else media:
+            _sync_media(page, deck_dir, target)
+        _git(mirror, "add", "-A", "--", deck_dir.name)
+        if _git(mirror, "diff", "--cached", "--quiet", check=False).returncode == 0:
+            return False
+        _git(mirror, "commit", "-q", "-m", message)
+        return True
 
 
 def log(mirror: Path, deck_name: str) -> list[tuple[str, str, str]]:
@@ -106,12 +134,13 @@ def show(mirror: Path, deck_name: str, rev: str) -> str:
 
 def restore(mirror: Path, deck_dir: Path, rev: str) -> None:
     """Put back a past version of the deck; the current state is committed first, so this can be undone."""
-    page = show(mirror, deck_dir.name, rev)
-    commit(mirror, deck_dir, f"{deck_dir.name}: before restoring {rev[:7]}")
-    tmp = deck_dir / ".index.html.tmp"
-    tmp.write_text(page, encoding="utf-8")
-    tmp.replace(deck_dir / "index.html")
-    commit(mirror, deck_dir, f"{deck_dir.name}: restored {rev[:7]}")
+    with locked(mirror):
+        page = show(mirror, deck_dir.name, rev)
+        commit(mirror, deck_dir, f"{deck_dir.name}: before restoring {rev[:7]}")
+        tmp = deck_dir / ".index.html.tmp"
+        tmp.write_text(page, encoding="utf-8")
+        tmp.replace(deck_dir / "index.html")
+        commit(mirror, deck_dir, f"{deck_dir.name}: restored {rev[:7]}")
 
 
 def rename(mirror: Path, old_name: str, new_name: str, deck_dir: Path | None = None) -> bool:
@@ -122,6 +151,11 @@ def rename(mirror: Path, old_name: str, new_name: str, deck_dir: Path | None = N
     is put back as it was."""
     if old_name == new_name or not (mirror / ".git").is_dir():
         return False
+    with locked(mirror):
+        return _rename(mirror, old_name, new_name, deck_dir)
+
+
+def _rename(mirror: Path, old_name: str, new_name: str, deck_dir: Path | None) -> bool:
     if not _git(mirror, "ls-files", "--", old_name).stdout.strip():
         return False
     if (mirror / new_name).exists():

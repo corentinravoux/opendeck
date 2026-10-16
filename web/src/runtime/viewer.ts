@@ -10,7 +10,7 @@ import "./fonts.css";
 import "../render/base.css";
 import "../render/theme/presets.css";
 import { hydrateSection, readMeta, type DeckMeta } from "../render/hydrate";
-import { enterSlide, leaveSlide, printStills, togglePlay, videosIn } from "../render/video";
+import { enterSlide, leaveSlide, makeControllable, printStills, videosIn } from "../render/video";
 
 function slideNumber(n: number): HTMLElement {
   const el = document.createElement("div");
@@ -76,7 +76,7 @@ function viewMode(meta: DeckMeta, sections: HTMLElement[], fixed: number | null)
   show(fixed ?? fromHash());
   if (fixed !== null) return;
   addEventListener("resize", fit);
-  for (const v of sections.flatMap((s) => videosIn(s))) v.addEventListener("click", () => togglePlay(v));
+  for (const v of sections.flatMap((s) => videosIn(s))) makeControllable(v);
   addEventListener("hashchange", () => show(fromHash()));
   addEventListener("keydown", (e) => {
     const step: Record<string, number> = {

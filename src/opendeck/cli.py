@@ -28,9 +28,11 @@ def _migrate_fetch(args) -> int:
 
 
 def _import(args) -> int:
+    from .deck import versioning
     from .importer.slidescom import import_export
 
     config = load()
+    versioning.MIRROR_MEDIA = config.mirror_media
     report = import_export(args.export, config.decks_root, folder=args.folder,
                            reference_pdf=args.pdf, mirror=config.mirror_root, force=args.force)
     print(f"{config.decks_root / report.folder}: {report.slides} slides, {report.media_files} media files")
@@ -41,9 +43,11 @@ def _import(args) -> int:
 
 
 def _migrate_import(args) -> int:
+    from .deck import versioning
     from .migrate import batch
 
     config = load()
+    versioning.MIRROR_MEDIA = config.mirror_media
     return 1 if batch.run(config.inbox, config.decks_root, config.mirror_root, force=args.force) else 0
 
 
@@ -135,10 +139,13 @@ def _publish(args) -> int:
     if not config.publishing and not args.no_push and not args.remote:
         sys.exit("publishing is off: set publish_remote in the config file (or pass --remote / --no-push)")
     versioning.MIRROR_MEDIA = config.mirror_media
-    commit, names, changed = publish.build(config.decks_root, config.mirror_root, config.publish_exclude,
-                                           config.publish_title, config.publish_lfs, config.publish_index_url)
-    print(f"{len(names)} decks in snapshot {commit[:7]}" + ("" if changed else " (unchanged)"))
     remote = args.remote or config.publish_remote
+    if remote and remote == config.publish_remote:
+        publish.adopt_legacy_boundary(config.mirror_root, publish.push_url(config.mirror_root, remote))
+    commit, names, changed = publish.build(config.decks_root, config.mirror_root, config.publish_exclude,
+                                           config.publish_title, config.publish_lfs, config.publish_index_url,
+                                           remote=remote or None)
+    print(f"{len(names)} decks in snapshot {commit[:7]}" + ("" if changed else " (unchanged)"))
     if args.no_push or not remote:
         print("not pushed" + ("" if remote else ": no publish_remote in the config file"))
         return 0

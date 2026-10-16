@@ -67,6 +67,9 @@
   margin: 0;
   object-fit: contain;
 }
+/* the viewer makes each video a play / pause button (render/video.ts): show where the focus is */
+html.od-view .sl-block[data-block-type="video"] video { cursor: pointer; }
+html.od-view .sl-block[data-block-type="video"] video:focus-visible { outline: 3px solid #1f6fb2; outline-offset: -3px; }
 
 /* shape: SVG overflows by 1 px each side so strokes are not cut */
 .sl-block[data-block-type="shape"] .sl-block-content { line-height: 0; }

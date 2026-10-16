@@ -16,10 +16,14 @@ Every deck is private unless made public. The list of public decks is the whitel
 <mirror>/publish.gitignore, versioned in the local history and published as the snapshot's
 .gitignore; opendeck rewrites it only when a deck changes visibility (or a public deck is renamed).
 A private deck is kept out three times: it is not staged, the .gitignore keeps it out of the
-snapshot's index, and push() refuses any snapshot holding a folder that is not on the whitelist.
+snapshot's index, and push() (and the pre-push hook, for a hand-typed push) refuses to send any
+commit holding a folder that is not on the whitelist. A trashed deck leaves the whitelist, and a
+new deck never takes the folder name of one with a history, so visibility never passes to it.
 
 The tree is staged under <mirror>/.git/opendeck-public with its own index, so unchanged files are
-not rehashed. Each snapshot's parent is the last pushed one: nothing unpushed piles up.
+not rehashed. Each snapshot's parent is the last one pushed to the same destination (remote URL
+and branch), so nothing unpushed piles up, and a destination never receives snapshots it did not
+already have: a new destination starts from a snapshot with no parent.
 """
 
 from __future__ import annotations
@@ -36,8 +40,10 @@ from ..export import runtime
 from . import store, versioning
 
 BRANCH = "public"
-PUSHED = "refs/opendeck/pushed"
+LEGACY_PUSHED = "refs/opendeck/pushed"      # one boundary for every destination (before per-destination boundaries)
+PUSHED = "refs/opendeck/pushed-to"          # + /<key of remote URL and branch>: the last snapshot sent there
 STAGE = "opendeck-public"
+STAGE_LOCK = "opendeck-public.lock"         # one build or push at a time (the history lock is not held)
 GITIGNORE = "publish.gitignore"
 LFS_ATTRIBUTES = "*/media/** filter=lfs diff=lfs merge=lfs -text\n"
 WORKFLOW = """# Written by opendeck: deploys this repository as a GitHub Pages site. The media are in Git LFS,
@@ -101,28 +107,46 @@ def public_decks(mirror: Path) -> list[str]:
 
 
 def set_public(mirror: Path, name: str, public: bool, rename_to: str | None = None) -> bool:
-    """Make deck `name` public or private (or move its entry to `rename_to`) and commit the
-    whitelist to the history. False if nothing changed."""
+    """Make deck `name` public or private (or move its entry to `rename_to`: a private deck stays
+    private, and so does whatever stood at `rename_to`) and commit the whitelist to the history.
+    False if nothing changed. The read, update and commit hold the mirror's lock."""
     if not paths_ok(name) or (rename_to is not None and not paths_ok(rename_to)):
         raise ValueError(f"invalid deck name {name!r}")
-    versioning.ensure_repo(mirror)
-    names = set(public_decks(mirror))
-    before = set(names)
-    if rename_to is not None:
-        if name in names:
-            names = (names - {name}) | {rename_to}
-    elif public:
-        names.add(name)
-    else:
-        names.discard(name)
-    if names == before and (mirror / GITIGNORE).is_file():
-        return False
-    what = f"renamed to {rename_to}" if rename_to is not None else ("public" if public else "private")
-    return _write_whitelist(mirror, names, f"{name}: {what}")
+    with versioning.locked(mirror):
+        versioning.ensure_repo(mirror)
+        names = set(public_decks(mirror))
+        before = set(names)
+        if rename_to is not None:
+            was_public = name in names
+            names -= {name, rename_to}
+            if was_public:
+                names.add(rename_to)
+        elif public:
+            names.add(name)
+        else:
+            names.discard(name)
+        if names == before and (mirror / GITIGNORE).is_file():
+            return False
+        what = f"renamed to {rename_to}" if rename_to is not None else ("public" if public else "private")
+        return _write_whitelist(mirror, names, f"{name}: {what}")
+
+
+def forget(mirror: Path, names) -> bool:
+    """Take decks that no longer exist (trashed, deleted) off the whitelist, so that a later deck
+    under the same folder name does not inherit their visibility. False if none was on it."""
+    with versioning.locked(mirror):
+        public = set(public_decks(mirror))
+        gone = public & set(names)
+        if not gone:
+            return False
+        return _write_whitelist(mirror, public - gone, f"{', '.join(sorted(gone))}: gone, off the whitelist")
 
 
 def _write_whitelist(mirror: Path, names, message: str) -> bool:
-    (mirror / GITIGNORE).write_text(_HEADER + "".join(f"!/{n}/\n" for n in sorted(names)), encoding="utf-8")
+    versioning.ensure_repo(mirror)
+    tmp = mirror / f".{GITIGNORE}.tmp"
+    tmp.write_text(_HEADER + "".join(f"!/{n}/\n" for n in sorted(names)), encoding="utf-8")
+    os.replace(tmp, mirror / GITIGNORE)      # a reader (the pre-push hook) never sees half a list
     versioning._git(mirror, "add", "--", GITIGNORE)
     if versioning._git(mirror, "diff", "--cached", "--quiet", check=False).returncode == 0:
         return False
@@ -299,17 +323,61 @@ def _stage(stage: Path, decks_root: Path, decks: list[store.DeckInfo], mirror_gi
         "Open `index.html` for the list.\n", encoding="utf-8")
 
 
+def push_url(mirror: Path, remote: str) -> str:
+    """The URL git pushes to for `remote` (a remote's name, or a URL as it is): what the pre-push
+    hook is given, so both key a destination the same way."""
+    out = versioning._git(mirror, "remote", "get-url", "--push", "--", remote, check=False)
+    return out.stdout.strip() if out.returncode == 0 and out.stdout.strip() else remote
+
+
+def _boundary_ref(url: str, remote_ref: str) -> str:
+    import hashlib
+
+    key = hashlib.sha256(f"{url}\n{remote_ref}".encode()).hexdigest()[:24]
+    return f"{PUSHED}/{key}"
+
+
+def pushed(mirror: Path, url: str, branch: str = "main") -> str:
+    """The last snapshot pushed to `branch` at `url` ("" if none)."""
+    return _git(mirror, "rev-parse", "--verify", "-q", _boundary_ref(url, f"refs/heads/{branch}"), check=False)
+
+
+def adopt_legacy_boundary(mirror: Path, url: str, branch: str = "main") -> None:
+    """Earlier versions kept one pushed boundary for every destination: give it to `url`, the
+    destination it was pushed to (publish_remote), and drop it."""
+    with versioning.locked(mirror, STAGE_LOCK):
+        legacy = _git(mirror, "rev-parse", "--verify", "-q", LEGACY_PUSHED, check=False)
+        if not legacy:
+            return
+        if not pushed(mirror, url, branch):
+            _git(mirror, "update-ref", _boundary_ref(url, f"refs/heads/{branch}"), legacy)
+        _git(mirror, "update-ref", "-d", LEGACY_PUSHED)
+
+
 def build(decks_root: Path, mirror: Path, exclude: tuple[str, ...] | list[str] = (),
-          title: str = "Talks", lfs: bool = False, index_url: str = "") -> tuple[str, list[str], bool]:
-    """Commit every deck to the history, then snapshot the public ones on branch `public`.
-    Returns (commit, published deck names, whether the snapshot changed)."""
+          title: str = "Talks", lfs: bool = False, index_url: str = "",
+          remote: str | None = None, branch: str = "main") -> tuple[str, list[str], bool]:
+    """Commit every deck to the history, then snapshot the public ones on branch `public`, for
+    `branch` of `remote` (its parent: the last snapshot pushed there; none without `remote`, or
+    for a destination never pushed to). Returns (commit, published deck names, whether branch
+    `public` moved)."""
+    versioning.ensure_repo(mirror)
     all_decks = store.list_decks(decks_root)
     for d in all_decks:
         versioning.commit(mirror, decks_root / d.name, f"{d.name}: publish")
-    if not (mirror / GITIGNORE).is_file():
-        _write_whitelist(mirror, [], "start the publish whitelist: every deck private")
-    public = set(public_decks(mirror))
+    with versioning.locked(mirror):
+        if not (mirror / GITIGNORE).is_file():
+            _write_whitelist(mirror, [], "start the publish whitelist: every deck private")
+        existing = {d.name for d in all_decks}
+        forget(mirror, [n for n in public_decks(mirror) if n not in existing])
+        public = set(public_decks(mirror))
     decks = [d for d in all_decks if d.name in public and included(d.name, exclude)]
+    with versioning.locked(mirror, STAGE_LOCK):
+        return _snapshot(decks_root, mirror, decks, title, lfs, index_url, remote, branch)
+
+
+def _snapshot(decks_root: Path, mirror: Path, decks: list[store.DeckInfo], title: str, lfs: bool,
+              index_url: str, remote: str | None, branch: str) -> tuple[str, list[str], bool]:
     git_dir = mirror / ".git"
     stage = git_dir / STAGE
     if lfs:
@@ -320,23 +388,37 @@ def build(decks_root: Path, mirror: Path, exclude: tuple[str, ...] | list[str] =
     env = {"GIT_INDEX_FILE": str(git_dir / f"{STAGE}.index")}
     work = ["--git-dir", str(git_dir), "--work-tree", str(stage)]
     _git(mirror, *work, "add", "-A", ".", env=env)
-    _git(mirror, *work, "add", "--renormalize", ".", env=env)   # media staged before LFS was turned on
+    # files staged before LFS was turned on (or off) are re-filtered, once: unchanged media are
+    # otherwise not reread
+    marker, filters = git_dir / f"{STAGE}.filters", "lfs" if lfs else "plain"
+    if not marker.is_file() or marker.read_text(encoding="utf-8") != filters:
+        _git(mirror, *work, "add", "--renormalize", ".", env=env)
+        marker.write_text(filters, encoding="utf-8")
     tree = _git(mirror, *work, "write-tree", env=env)
+    names = [d.name for d in decks]
     prev = _git(mirror, "rev-parse", "--verify", "-q", f"refs/heads/{BRANCH}", check=False)
-    if prev and _git(mirror, "rev-parse", f"{prev}^{{tree}}") == tree:
-        return prev, [d.name for d in decks], False
-    pushed = _git(mirror, "rev-parse", "--verify", "-q", PUSHED, check=False)
-    parent = ["-p", pushed] if pushed else []
-    commit = _git(mirror, "commit-tree", tree, *parent, "-m", f"publish {len(decks)} decks")
+    base = pushed(mirror, push_url(mirror, remote), branch) if remote else ""
+    tree_of = lambda c: _git(mirror, "rev-parse", f"{c}^{{tree}}")
+    parents_of = lambda c: _git(mirror, "rev-list", "--parents", "-n", "1", c).split()[1:]
+    if base and tree_of(base) == tree:
+        commit = base                        # what the destination already has
+    elif prev and tree_of(prev) == tree and parents_of(prev) == ([base] if base else []):
+        commit = prev
+    else:
+        commit = _git(mirror, "commit-tree", tree, *(["-p", base] if base else []), "-m", f"publish {len(decks)} decks")
+    if commit == prev:
+        return prev, names, False
     _git(mirror, "update-ref", f"refs/heads/{BRANCH}", commit)
-    return commit, [d.name for d in decks], True
+    return commit, names, True
 
 
 HOOK = """\
 #!/bin/sh
 # Written by opendeck. Only the website snapshot (branch {branch}) may leave this repository, and
 # only when it holds public decks alone: the history of every deck stays on this machine.
+url=$2
 input=$(cat)
+top=$(git rev-parse --show-toplevel)
 zero=0000000000000000000000000000000000000000
 echo "$input" | while read -r local_ref local_sha remote_ref remote_sha; do
   [ -z "$local_ref" ] && continue
@@ -345,8 +427,9 @@ echo "$input" | while read -r local_ref local_sha remote_ref remote_sha; do
     echo "opendeck: refusing to push $local_ref; only the website snapshot (branch {branch}) is pushed" >&2
     exit 1
   fi
+  {python} -c "import sys; from pathlib import Path; from opendeck.deck import publish; publish.check(Path(sys.argv[1]), *sys.argv[2:])" \
+    "$top" "$url" "$remote_ref" "$local_sha" "$remote_sha" || exit 1
 done || exit 1
-{python} -c "import sys; from pathlib import Path; from opendeck.deck import publish; publish.check(Path(sys.argv[1]))" "$(git rev-parse --show-toplevel)" || exit 1
 if command -v git-lfs >/dev/null 2>&1; then
   echo "$input" | git lfs pre-push "$@"
 fi
@@ -367,13 +450,22 @@ class PrivateDeckError(RuntimeError):
     pass
 
 
-def check(mirror: Path) -> str:
-    """The snapshot about to be pushed, after checking that it and every unpushed commit under
-    it hold only public decks. Raises PrivateDeckError otherwise."""
-    tip = _git(mirror, "rev-parse", "--verify", f"refs/heads/{BRANCH}")
-    pushed = _git(mirror, "rev-parse", "--verify", "-q", PUSHED, check=False)
+def check(mirror: Path, url: str | None = None, remote_ref: str = "refs/heads/main",
+          sha: str | None = None, remote_sha: str | None = None) -> str:
+    """The snapshot about to be pushed (`sha`, default: branch `public`), after checking that it
+    and every commit under it that the destination does not have yet hold only public decks, by
+    the whitelist as it is now. What the destination has: the last snapshot pushed to `remote_ref`
+    at `url`, and `remote_sha` (its current tip, as the pre-push hook is told). Without `url`, the
+    whole ancestry is checked. Raises PrivateDeckError otherwise."""
+    tip = _git(mirror, "rev-parse", "--verify", sha or f"refs/heads/{BRANCH}")
+    have = []
+    if url:
+        have.append(_git(mirror, "rev-parse", "--verify", "-q", _boundary_ref(url, remote_ref), check=False))
+    if remote_sha and set(remote_sha) != {"0"}:
+        have.append(_git(mirror, "rev-parse", "--verify", "-q", f"{remote_sha}^{{commit}}", check=False))
     public = set(public_decks(mirror))
-    commits = _git(mirror, "rev-list", tip, *([f"^{pushed}"] if pushed else [])).split()
+    # the tip always: it may be a snapshot the destination has, holding a deck made private since
+    commits = [tip] + [c for c in _git(mirror, "rev-list", tip, *(f"^{h}" for h in have if h)).split() if c != tip]
     for c in commits:
         # every folder but dot-folders (.github: never a deck, deck names cannot start with ".")
         folders = {line.split("\t", 1)[1] for line in _git(mirror, "ls-tree", c).splitlines()
@@ -386,7 +478,9 @@ def check(mirror: Path) -> str:
 
 def push(mirror: Path, remote: str, branch: str = "main") -> None:
     """Push the latest snapshot (only branch `public`, never the history) to `branch` of the remote."""
-    tip = check(mirror)
-    install_hook(mirror)
-    subprocess.run(["git", "-C", str(mirror), "push", remote, f"refs/heads/{BRANCH}:refs/heads/{branch}"], check=True)
-    _git(mirror, "update-ref", PUSHED, tip)
+    with versioning.locked(mirror, STAGE_LOCK):      # no build moves branch `public` meanwhile
+        url, ref = push_url(mirror, remote), f"refs/heads/{branch}"
+        tip = check(mirror, url, ref)
+        install_hook(mirror)
+        subprocess.run(["git", "-C", str(mirror), "push", remote, f"refs/heads/{BRANCH}:{ref}"], check=True)
+        _git(mirror, "update-ref", _boundary_ref(url, ref), tip)

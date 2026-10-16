@@ -161,20 +161,33 @@ def slugify(title: str) -> str:
     return _slug(title) or "deck"
 
 
-def _new_folder(decks_root: Path, title: str, today: datetime | None) -> Path:
+def _had_deck(mirror: Path | None, name: str) -> bool:
+    """Whether a deck once had folder `name` (a trashed or deleted one): it has a history in the
+    mirror, or a place on the publish whitelist. Such a name is not given to another deck, which
+    would inherit that history and that visibility."""
+    if mirror is None:
+        return False
+    if (mirror / name).exists():
+        return True
+    whitelist = mirror / "publish.gitignore"     # publish.GITIGNORE (publish imports this module)
+    return whitelist.is_file() and f"!/{name}/" in whitelist.read_text(encoding="utf-8").splitlines()
+
+
+def _new_folder(decks_root: Path, title: str, today: datetime | None, mirror: Path | None = None) -> Path:
     """A free folder path YYYY-MM_<slug> (then -2, -3, ...) for a new deck; not created."""
     base = f"{(today or datetime.now()):%Y-%m}_{slugify(title)}"
     name, n = base, 2
-    while (decks_root / name).exists():
+    while (decks_root / name).exists() or _had_deck(mirror, name):
         name, n = f"{base}-{n}", n + 1
     return decks_root / name
 
 
-def create(decks_root: Path, title: str, today: datetime | None = None) -> Path:
-    """A new deck folder YYYY-MM_<slug> with one title slide (1024x576, the decks' usual theme)."""
+def create(decks_root: Path, title: str, today: datetime | None = None, mirror: Path | None = None) -> Path:
+    """A new deck folder YYYY-MM_<slug> with one title slide (1024x576, the decks' usual theme).
+    With `mirror`, never the folder name of a deck that had a history there."""
     import secrets
 
-    deck = _new_folder(decks_root, title, today)
+    deck = _new_folder(decks_root, title, today, mirror)
     (deck / "media").mkdir(parents=True)
     meta = DeckMeta(title=title.strip() or "Untitled")
     sid, bid = secrets.token_hex(12), secrets.token_hex(6)
@@ -188,13 +201,14 @@ def create(decks_root: Path, title: str, today: datetime | None = None) -> Path:
     return deck
 
 
-def duplicate(decks_root: Path, source: Path, title: str, today: datetime | None = None) -> Path:
+def duplicate(decks_root: Path, source: Path, title: str, today: datetime | None = None,
+              mirror: Path | None = None) -> Path:
     """A copy of deck `source` under a new title, filed under this month: its slides, its images
     (hard-linked when possible: media files are content-addressed and never rewritten) and its
     runtime. Its export destinations, reference PDF and history stay with the original."""
     import shutil
 
-    deck = _new_folder(decks_root, title, today)
+    deck = _new_folder(decks_root, title, today, mirror)
     tmp = deck.with_name(f".{deck.name}.tmp")
     try:
         (tmp / "media").mkdir(parents=True)
@@ -250,7 +264,7 @@ def rename(decks_root: Path, deck: Path, title: str, mirror: Path | None = None)
     if deck.name == base or re.fullmatch(re.escape(base) + r"-\d+", deck.name):
         name = deck.name  # same slug: keep the folder
     else:
-        taken = lambda n: (decks_root / n).exists() or (mirror is not None and (mirror / n).exists())
+        taken = lambda n: (decks_root / n).exists() or _had_deck(mirror, n)
         name, n = base, 2
         while taken(name):
             name, n = f"{base}-{n}", n + 1

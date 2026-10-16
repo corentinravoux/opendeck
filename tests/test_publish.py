@@ -103,10 +103,166 @@ def test_push_refuses_a_snapshot_with_a_private_deck(tmp_path):
     publish.push(mirror, str(remote))
     assert git(remote, "rev-parse", "main").strip() == commit
     assert git(remote, "branch", "--list").split() == ["main"]
-    # the next snapshot sits on the pushed one: one unpushed commit at most
+    # the next snapshot for that destination sits on the one pushed there: one unpushed commit at most
     publish.set_public(mirror, "2024-12_talk", True)
-    new, _, _ = publish.build(root, mirror)
+    new, _, _ = publish.build(root, mirror, remote=str(remote))
     assert git(mirror, "rev-parse", f"{new}^").strip() == commit
+    # without a destination, a snapshot has no parent
+    alone, _, _ = publish.build(root, mirror)
+    assert git(mirror, "rev-list", "--parents", "-n", "1", alone).split() == [alone]
+
+
+@pytest.mark.skipif(not (runtime.BUILD / "opendeck.js").is_file(), reason="runtime not built")
+def test_an_unchanged_snapshot_is_checked_again_before_a_push(tmp_path):
+    mirror, root, remote = tmp_path / "mirror", tmp_path / "decks", tmp_path / "remote.git"
+    root.mkdir()
+    deck(root, "2024-12_talk", "A talk")
+    subprocess.run(["git", "init", "-q", "--bare", str(remote)], check=True)
+    publish.set_public(mirror, "2024-12_talk", True)
+    publish.build(root, mirror, remote=str(remote))
+    publish.push(mirror, str(remote))
+    publish.set_public(mirror, "2024-12_talk", False)
+    # branch public is the very snapshot pushed: no unpushed commit, yet it holds a private deck
+    with pytest.raises(publish.PrivateDeckError, match="2024-12_talk"):
+        publish.push(mirror, str(remote))
+    r = subprocess.run(["git", "-C", str(mirror), "push", str(remote), "public:refs/heads/again"],
+                       capture_output=True, text=True)
+    assert r.returncode != 0 and "not public" in r.stderr
+
+
+@pytest.mark.skipif(not (runtime.BUILD / "opendeck.js").is_file(), reason="runtime not built")
+def test_a_new_destination_never_receives_older_snapshots(tmp_path):
+    mirror, root = tmp_path / "mirror", tmp_path / "decks"
+    a, b = tmp_path / "a.git", tmp_path / "b.git"
+    root.mkdir()
+    deck(root, "2024-12_talk", "A talk")
+    for r in (a, b):
+        subprocess.run(["git", "init", "-q", "--bare", str(r)], check=True)
+    publish.set_public(mirror, "2024-12_talk", True)
+    publish.build(root, mirror, remote=str(a))
+    publish.push(mirror, str(a))
+    publish.set_public(mirror, "2024-12_talk", False)
+    for_a, names, _ = publish.build(root, mirror, remote=str(a))
+    assert names == []
+    publish.push(mirror, str(a))                    # A had the deck already: only the new tip is checked
+    # that snapshot's parent holds the deck: it must not reach B, by push() or by hand
+    with pytest.raises(publish.PrivateDeckError, match="2024-12_talk"):
+        publish.push(mirror, str(b))
+    r = subprocess.run(["git", "-C", str(mirror), "push", str(b), "public:refs/heads/main"],
+                       capture_output=True, text=True)
+    assert r.returncode != 0 and "not public" in r.stderr
+    assert git(b, "branch", "--list").strip() == ""
+    # built for B, the snapshot starts afresh, with no parent
+    for_b, _, _ = publish.build(root, mirror, remote=str(b))
+    assert git(mirror, "rev-list", "--parents", "-n", "1", for_b).split() == [for_b]
+    publish.push(mirror, str(b))
+    assert "2024-12_talk" not in git(b, "log", "--name-only", "--format=", "main")
+    # A's boundary is its own: the next snapshot for A still sits on what A has
+    publish.set_public(mirror, "2025-01_other", True)
+    deck(root, "2025-01_other", "Other")
+    nxt, _, _ = publish.build(root, mirror, remote=str(a))
+    assert git(mirror, "rev-parse", f"{nxt}^").strip() == for_a
+
+
+def test_legacy_boundary_goes_to_the_configured_remote(tmp_path):
+    mirror = tmp_path / "mirror"
+    versioning.ensure_repo(mirror)
+    head = git(mirror, "rev-parse", "HEAD").strip()
+    git(mirror, "update-ref", publish.LEGACY_PUSHED, head)
+    publish.adopt_legacy_boundary(mirror, "git@example.org:me/d.git")
+    assert publish.pushed(mirror, "git@example.org:me/d.git") == head
+    assert publish.pushed(mirror, "git@example.org:me/other.git") == ""
+    assert subprocess.run(["git", "-C", str(mirror), "rev-parse", "--verify", "-q", publish.LEGACY_PUSHED],
+                          capture_output=True).returncode != 0
+
+
+@pytest.mark.skipif(not (runtime.BUILD / "opendeck.js").is_file(), reason="runtime not built")
+def test_build_with_no_deck_and_no_mirror(tmp_path):
+    mirror, root = tmp_path / "mirror", tmp_path / "decks"
+    root.mkdir()
+    commit, names, changed = publish.build(root, mirror)
+    assert names == [] and changed
+    assert "/*/" in git(mirror, "show", f"{commit}:.gitignore")
+
+
+@pytest.mark.skipif(not (runtime.BUILD / "opendeck.js").is_file(), reason="runtime not built")
+def test_media_are_renormalised_only_when_the_filters_change(tmp_path, monkeypatch):
+    mirror, root = tmp_path / "mirror", tmp_path / "decks"
+    root.mkdir()
+    deck(root, "2024-12_talk", "A talk")
+    publish.set_public(mirror, "2024-12_talk", True)
+    calls = []
+    real = publish._git
+    monkeypatch.setattr(publish, "_git", lambda m, *a, **k: (calls.append(a), real(m, *a, **k))[1])
+    renormalised = lambda: sum("--renormalize" in a for a in calls)
+    publish.build(root, mirror)
+    assert renormalised() == 1                      # first snapshot
+    publish.build(root, mirror)
+    assert renormalised() == 1                      # unchanged filters: plain `add -A`
+    if subprocess.run(["git", "lfs", "version"], capture_output=True).returncode == 0:
+        publish.build(root, mirror, lfs=True)
+        assert renormalised() == 2                  # LFS turned on: once
+        publish.build(root, mirror, lfs=True)
+        assert renormalised() == 2
+
+
+def test_concurrent_visibility_changes_are_not_lost(tmp_path):
+    import threading
+
+    mirror = tmp_path / "mirror"
+    names = [f"2024-{m:02d}_talk" for m in range(1, 13)]
+    publish.set_public(mirror, names[0], True)
+    barrier = threading.Barrier(len(names))
+
+    def flip(i, name):
+        barrier.wait()
+        publish.set_public(mirror, name, i % 2 == 1)  # the first (public) goes private, others alternate
+
+    threads = [threading.Thread(target=flip, args=(i, n)) for i, n in enumerate(names)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert publish.public_decks(mirror) == [n for i, n in enumerate(names) if i % 2 == 1]
+    assert git(mirror, "status", "--porcelain").strip() == ""
+
+
+def test_trashed_public_deck_passes_no_visibility_on(tmp_path):
+    from starlette.testclient import TestClient
+
+    from opendeck.config import Config
+    from opendeck.server.app import create_app
+
+    root = tmp_path / "decks"
+    root.mkdir()
+    cfg = Config(decks_root=root, mirror_root=tmp_path / "m", publish_remote="git@example.org:me/d.git")
+    c = TestClient(create_app(cfg), base_url="http://127.0.0.1")
+    h = {"X-Opendeck": "1"}
+    name = c.post("/api/decks", json={"title": "Talk"}, headers=h).json()["name"]
+    assert c.post(f"/api/decks/{name}/visibility", json={"public": True}, headers=h).json()["public"]
+    assert c.delete(f"/api/decks/{name}", headers=h).status_code == 200
+    assert publish.public_decks(cfg.mirror_root) == []
+    # the same title, the same month: another folder name (that one has a history), private
+    again = c.post("/api/decks", json={"title": "Talk"}, headers=h).json()["name"]
+    assert again != name and publish.public_decks(cfg.mirror_root) == []
+    assert {d["name"]: d["public"] for d in c.get("/api/decks").json()} == {again: False}
+
+
+def test_a_stale_whitelist_entry_is_never_inherited(tmp_path):
+    mirror, root = tmp_path / "mirror", tmp_path / "decks"
+    root.mkdir()
+    d = store.create(root, "Talk")
+    publish.set_public(mirror, d.name, True)        # public, never committed, then deleted by hand
+    import shutil
+
+    shutil.rmtree(d)
+    assert store.create(root, "Talk", mirror=mirror).name != d.name
+    other = store.create(root, "Other", mirror=mirror)
+    renamed = store.rename(root, other, "Talk", mirror)
+    assert renamed.name != d.name
+    # renaming a private deck onto a stale public entry does not make it public
+    publish.set_public(mirror, "2024-01_private", True, rename_to=d.name)
+    assert d.name not in publish.public_decks(mirror)
 
 
 def test_talk_index_escapes_and_groups(tmp_path):
@@ -244,3 +400,23 @@ def test_talks_json_thumbnails_and_redirect(tmp_path):
         assert talk["thumb"] == "2024-12_talk/thumb.webp"
         assert "2024-12_talk/thumb.webp" in git(mirror, "ls-tree", "-r", "--name-only", commit)
         assert publish.check(mirror) == commit
+
+
+def test_cli_imports_follow_mirror_media(tmp_path, monkeypatch):
+    import argparse
+
+    from opendeck import cli
+    from opendeck.config import Config
+    from opendeck.importer import slidescom
+    from opendeck.migrate import batch
+
+    seen = []
+    monkeypatch.setattr(cli, "load", lambda: Config(decks_root=tmp_path, mirror_root=tmp_path / "m", mirror_media=True))
+    monkeypatch.setattr(versioning, "MIRROR_MEDIA", False)
+    monkeypatch.setattr(slidescom, "import_export", lambda *a, **k: seen.append(versioning.MIRROR_MEDIA) or
+                        slidescom.ImportReport(folder="x"))
+    monkeypatch.setattr(batch, "run", lambda *a, **k: seen.append(versioning.MIRROR_MEDIA) or 0)
+    cli._import(argparse.Namespace(export=tmp_path / "e.zip", folder=None, pdf=None, force=False))
+    monkeypatch.setattr(versioning, "MIRROR_MEDIA", False)
+    cli._migrate_import(argparse.Namespace(force=False))
+    assert seen == [True, True]

@@ -39,6 +39,26 @@ export function togglePlay(v: HTMLVideoElement): void {
 }
 
 /**
+ * Viewer only: a video is its own play / pause button, for the mouse and for the keyboard. It
+ * takes the focus (Tab), says what activating it does, and Enter or Space plays or pauses it
+ * without also moving to the next slide.
+ */
+export function makeControllable(v: HTMLVideoElement): void {
+  const label = () => v.setAttribute("aria-label", v.paused || v.ended ? "Play video" : "Pause video");
+  v.tabIndex = 0;
+  v.setAttribute("role", "button");
+  label();
+  for (const ev of ["play", "pause", "ended"]) v.addEventListener(ev, label);
+  v.addEventListener("click", () => togglePlay(v));
+  v.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (!e.repeat) togglePlay(v);
+  });
+}
+
+/**
  * Print mode: each video is replaced by its still (data-print, else poster), so a PDF page never
  * shows an empty box. A video with neither keeps its element, seeked to its last frame; the
  * returned promise settles when those frames are there (or after `timeoutMs`).

@@ -6,7 +6,7 @@ import { videoBlock } from "../../src/model/factory";
 import { setVideo, videoSpec } from "../../src/model/ops";
 import { parseDoc } from "../../src/model/parse";
 import { blockHtml, serializeDoc } from "../../src/model/serialize";
-import { enterSlide, leaveSlide, printStills } from "../../src/render/video";
+import { enterSlide, leaveSlide, makeControllable, printStills } from "../../src/render/video";
 
 const SLIDE = `<section data-id="v1"><div class="sl-block" data-block-type="video" style="width: 1024px; height: 576px; left: 0px; top: 0px;" data-block-id="vb"><div class="sl-block-content" style="z-index: 10;"><video src="media/aaa.webm" poster="media/first.png" data-print="media/last.png" muted playsinline preload="auto"><source src="media/bbb.mp4" type="video/mp4"></video></div></div></section>`;
 
@@ -60,6 +60,23 @@ describe("editor display", () => {
     expect(html).toContain('<source src="/view/2026-10_test/media/bbb.mp4"');
     expect(html).toContain('preload="metadata"');
   });
+
+  it("never lets a video play or buffer on its own in the editor", () => {
+    const imported = `<video src="media/a.webm" autoplay muted loop data-autoplay="true"></video>`
+      + `<video src="media/b.webm" AUTOPLAY="" data-x="a>b"></video><video src="media/c.webm" preload='auto'></video>`;
+    const html = stillVideos(imported);
+    const tpl = document.createElement("template");
+    tpl.innerHTML = html;
+    const videos = [...tpl.content.querySelectorAll("video")];
+    expect(videos).toHaveLength(3);
+    for (const v of videos) {
+      expect(v.hasAttribute("autoplay")).toBe(false);
+      expect(v.getAttribute("preload")).toBe("metadata");
+    }
+    expect(videos[0].dataset.autoplay).toBe("true");       // the deck's own setting stays
+    expect(videos[0].hasAttribute("loop")).toBe(true);
+    expect(videos[1].dataset.x).toBe("a>b");
+  });
 });
 
 describe("runtime", () => {
@@ -106,6 +123,33 @@ describe("runtime", () => {
     await printStills(s);
     expect(s.querySelector("video")).toBeNull();
     expect([...s.querySelectorAll("img.od-video-still")].map((i) => i.getAttribute("src"))).toEqual(["media/last.png", "media/c.png"]);
+  });
+
+  it("a video is a focusable play / pause button whose keys do not turn the slide", () => {
+    const v = section(SLIDE).querySelector("video")!;
+    document.body.appendChild(v);
+    const turned: string[] = [];
+    const onKey = (e: KeyboardEvent) => turned.push(e.key);
+    addEventListener("keydown", onKey);
+    try {
+      makeControllable(v);
+      expect(v.tabIndex).toBe(0);
+      expect(v.getAttribute("role")).toBe("button");
+      expect(v.getAttribute("aria-label")).toBe("Play video");
+      for (const key of ["Enter", " "]) {
+        const e = new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true });
+        v.dispatchEvent(e);
+        expect(e.defaultPrevented).toBe(true);
+      }
+      expect(played).toEqual([v, v]);
+      v.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+      expect(turned).toEqual(["ArrowRight"]);           // other keys still move between slides
+      v.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      expect(played).toHaveLength(3);
+    } finally {
+      removeEventListener("keydown", onKey);
+      v.remove();
+    }
   });
 
   it("print mode keeps a video without any still and does not hang", async () => {
