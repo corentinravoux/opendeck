@@ -36,7 +36,7 @@ def locked(mirror: Path, name: str = "opendeck.lock"):
     index and the publish whitelist. Re-entrant within a thread."""
     mirror.mkdir(parents=True, exist_ok=True)
     if not (mirror / ".git").is_dir():
-        _git(mirror, "init", "-q")
+        _git(mirror, "init", "-q", "-b", "main")
     path = (mirror / ".git" / name).resolve()
     held = _held.__dict__.setdefault("paths", set())
     if path in held:

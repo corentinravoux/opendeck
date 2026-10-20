@@ -96,13 +96,13 @@ def test_push_refuses_a_snapshot_with_a_private_deck(tmp_path):
     publish.set_public(mirror, "2024-12_talk", False)                 # made private before the push
     with pytest.raises(publish.PrivateDeckError, match="2024-12_talk"):
         publish.push(mirror, str(remote))
-    assert git(remote, "branch", "--list").strip() == ""
+    assert git(remote, "for-each-ref", "--format=%(refname:short)", "refs/heads").strip() == ""
     # rebuilt while private: an empty site, which may be pushed
     commit, names, _ = publish.build(root, mirror)
     assert names == []
     publish.push(mirror, str(remote))
     assert git(remote, "rev-parse", "main").strip() == commit
-    assert git(remote, "branch", "--list").split() == ["main"]
+    assert git(remote, "for-each-ref", "--format=%(refname:short)", "refs/heads").split() == ["main"]
     # the next snapshot for that destination sits on the one pushed there: one unpushed commit at most
     publish.set_public(mirror, "2024-12_talk", True)
     new, _, _ = publish.build(root, mirror, remote=str(remote))
@@ -151,7 +151,7 @@ def test_a_new_destination_never_receives_older_snapshots(tmp_path):
     r = subprocess.run(["git", "-C", str(mirror), "push", str(b), "public:refs/heads/main"],
                        capture_output=True, text=True)
     assert r.returncode != 0 and "not public" in r.stderr
-    assert git(b, "branch", "--list").strip() == ""
+    assert git(b, "for-each-ref", "--format=%(refname:short)", "refs/heads").strip() == ""
     # built for B, the snapshot starts afresh, with no parent
     for_b, _, _ = publish.build(root, mirror, remote=str(b))
     assert git(mirror, "rev-list", "--parents", "-n", "1", for_b).split() == [for_b]
@@ -375,10 +375,10 @@ def test_pre_push_hook_lets_only_the_public_snapshot_out(tmp_path):
     r = subprocess.run(["git", "-C", str(mirror), "push", str(remote), "public:refs/heads/main"],
                        capture_output=True, text=True)
     assert r.returncode != 0 and "not public" in r.stderr
-    assert git(remote, "branch", "--list").strip() == ""
+    assert git(remote, "for-each-ref", "--format=%(refname:short)", "refs/heads").strip() == ""
     publish.set_public(mirror, "2024-12_talk", True)
     publish.push(mirror, str(remote))
-    assert git(remote, "branch", "--list").split() == ["main"]
+    assert git(remote, "for-each-ref", "--format=%(refname:short)", "refs/heads").split() == ["main"]
     assert "internal" not in git(remote, "log", "--name-only", "--format=", "main")
 
 
