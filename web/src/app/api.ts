@@ -39,6 +39,28 @@ export interface RememberedExport {
   at: string;
 }
 
+/** Publishing (publish_remote): the public decks, when the site was last pushed, its address. */
+export interface Publishing {
+  enabled: boolean;
+  public?: number;
+  last?: string | null;
+  site?: string | null;
+}
+
+export interface Published {
+  snapshot: string;
+  decks: number;
+  changed: boolean;
+  last: string | null;
+}
+
+/** The branch the history mirror has checked out: opendeck needs `main`. */
+export interface MirrorState {
+  branch: string;
+  ok: boolean;
+  can_switch: boolean;
+}
+
 export interface Health {
   version: string;
   decks_root: string;
@@ -68,9 +90,14 @@ export const api = {
   health: () => call<Health>("GET", "/api/health"),
   decks: () => call<DeckInfo[]>("GET", "/api/decks"),
   deck: (name: string) => call<Deck>("GET", `/api/decks/${enc(name)}`),
-  /** New title; the folder follows it (YYYY-MM_<slug>). Returns the deck's (new) name. */
+  mirror: () => call<MirrorState>("GET", "/api/mirror"),
+  switchMirror: () => call<MirrorState>("POST", "/api/mirror/switch"),
+  publishing: () => call<Publishing>("GET", "/api/publishing"),
+  /** Snapshot the public decks and push them to publish_remote (what `opendeck publish` does). */
+  publish: () => call<Published>("POST", "/api/publish"),
   setVisibility: (name: string, isPublic: boolean) =>
     call<{ name: string; public: boolean }>("POST", `/api/decks/${enc(name)}/visibility`, { public: isPublic }),
+  /** New title; the folder follows it (YYYY-MM_<slug>). Returns the deck's (new) name. */
   renameDeck: (name: string, title: string) => call<{ name: string; etag: string }>("POST", `/api/decks/${enc(name)}/rename`, { title }),
   exports: (name: string) => call<RememberedExport[]>("GET", `/api/decks/${enc(name)}/exports`),
   exportDeck: (name: string, body: { kind: string; dir: string; name: string; zip: boolean; single?: boolean; overwrite: boolean }) =>

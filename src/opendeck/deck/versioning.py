@@ -18,6 +18,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 IDENTITY = ["-c", "user.name=opendeck", "-c", "user.email=opendeck@localhost"]
+HISTORY = "main"            # the branch the history lives on; `public` is the website snapshot
 MIRROR_MEDIA = False        # keep media in the mirror too: set from Config.mirror_media at start-up
 
 
@@ -63,6 +64,50 @@ def ensure_repo(mirror: Path) -> None:
         _git(mirror, "commit", "-q", "-m", "start the opendeck history mirror")
 
 
+def branch_state(mirror: Path) -> dict:
+    """Which branch the mirror has checked out. Everything opendeck reads or commits there (the
+    history, the publish whitelist) belongs on branch `main`: `ok` is false on any other, and
+    `can_switch` says whether switch_to_history() may go back (main exists, no uncommitted change)."""
+    if not (mirror / ".git").is_dir():
+        return {"branch": HISTORY, "ok": True, "can_switch": False}   # created on main when first used
+    branch = _git(mirror, "symbolic-ref", "--short", "-q", "HEAD", check=False).stdout.strip()
+    if branch == HISTORY:
+        return {"branch": branch, "ok": True, "can_switch": False}
+    exists = _git(mirror, "rev-parse", "--verify", "-q", f"refs/heads/{HISTORY}", check=False).returncode == 0
+    clean = not _git(mirror, "status", "--porcelain", "--untracked-files=no", check=False).stdout.strip()
+    return {"branch": branch or "(detached)", "ok": False, "can_switch": exists and clean}
+
+
+def on_history(mirror: Path) -> bool:
+    return branch_state(mirror)["ok"]
+
+
+class WrongBranchError(RuntimeError):
+    """The mirror has another branch than `main` checked out."""
+
+
+def require_history(mirror: Path) -> None:
+    """Refuse to change the history (or the publish whitelist) while another branch is checked out."""
+    state = branch_state(mirror)
+    if not state["ok"]:
+        raise WrongBranchError(f"the history {mirror} is on branch {state['branch']}, not {HISTORY}: "
+                               f"switch it back (git -C {mirror} checkout {HISTORY})")
+
+
+def switch_to_history(mirror: Path) -> dict:
+    """Check out branch `main` again (after a hand-made checkout of another one). Refuses when main
+    does not exist or the mirror has uncommitted changes."""
+    with locked(mirror):
+        state = branch_state(mirror)
+        if state["ok"]:
+            return state
+        if not state["can_switch"]:
+            raise RuntimeError(f"cannot switch {mirror} from {state['branch']} to {HISTORY}: "
+                               f"no branch {HISTORY}, or uncommitted changes there")
+        _git(mirror, "checkout", "-q", HISTORY)
+        return branch_state(mirror)
+
+
 # any quoted media path: src, poster, data-print, data-background-image, url(...)
 _MEDIA_REF = re.compile(r"""(?<=["'(])media/[A-Za-z0-9_.-]+(?=["')])""")
 
@@ -91,6 +136,8 @@ def commit(mirror: Path, deck_dir: Path, message: str, media: bool | None = None
     """Copy <deck>/index.html (and, with media or MIRROR_MEDIA, the media it uses) into the mirror
     and commit. False if nothing changed."""
     with locked(mirror):
+        if not on_history(mirror):
+            return False             # never into another branch; the next save after the switch catches up
         ensure_repo(mirror)
         target = mirror / deck_dir.name
         target.mkdir(parents=True, exist_ok=True)
@@ -135,6 +182,7 @@ def show(mirror: Path, deck_name: str, rev: str) -> str:
 def restore(mirror: Path, deck_dir: Path, rev: str) -> None:
     """Put back a past version of the deck; the current state is committed first, so this can be undone."""
     with locked(mirror):
+        require_history(mirror)
         page = show(mirror, deck_dir.name, rev)
         commit(mirror, deck_dir, f"{deck_dir.name}: before restoring {rev[:7]}")
         tmp = deck_dir / ".index.html.tmp"
@@ -152,6 +200,7 @@ def rename(mirror: Path, old_name: str, new_name: str, deck_dir: Path | None = N
     if old_name == new_name or not (mirror / ".git").is_dir():
         return False
     with locked(mirror):
+        require_history(mirror)
         return _rename(mirror, old_name, new_name, deck_dir)
 
 

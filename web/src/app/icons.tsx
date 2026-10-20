@@ -8,6 +8,7 @@ import caretLeft from "@phosphor-icons/core/assets/regular/caret-left.svg?raw";
 import caretUp from "@phosphor-icons/core/assets/regular/caret-up.svg?raw";
 import check from "@phosphor-icons/core/assets/regular/check.svg?raw";
 import clock from "@phosphor-icons/core/assets/regular/clock-counter-clockwise.svg?raw";
+import cloudUp from "@phosphor-icons/core/assets/regular/cloud-arrow-up.svg?raw";
 import code from "@phosphor-icons/core/assets/regular/code.svg?raw";
 import cursor from "@phosphor-icons/core/assets/regular/cursor.svg?raw";
 import eye from "@phosphor-icons/core/assets/regular/eye.svg?raw";
@@ -63,7 +64,7 @@ const SVG = {
   history: clock, library: images, close: x, folder, up: caretUp, down: caretDown, search,
   group: boundingBox, dots, sun, moon, bold, italic, underline, strike, subscript, superscript,
   bullets: listBullets, numbers: listNumbers, alignLeft, alignCenter, alignRight, link, eraser,
-  pdf: filePdf, html: fileHtml, zip: fileZip, open: arrowSquareOut, code, warning, cursor, eye, decks: house, globe, lock,
+  pdf: filePdf, html: fileHtml, zip: fileZip, open: arrowSquareOut, code, warning, cursor, eye, decks: house, globe, lock, publish: cloudUp,
 };
 
 export type IconName = keyof typeof SVG;

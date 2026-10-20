@@ -70,20 +70,54 @@ def create_app(config: Config, host: Host | None = None, allowed_hosts: set[str]
                                           status_code=404)
             return None, error(404, str(exc))
 
+    def wrong_branch() -> JSONResponse | None:
+        """409 while the history mirror is on another branch than main (see /api/mirror)."""
+        try:
+            versioning.require_history(config.mirror_root)
+        except versioning.WrongBranchError as exc:
+            return error(409, str(exc))
+        return None
+
+    async def mirror_state(request: Request):
+        return JSONResponse(await run_in_threadpool(versioning.branch_state, config.mirror_root))
+
+    async def mirror_switch(request: Request):
+        try:
+            return JSONResponse(await run_in_threadpool(versioning.switch_to_history, config.mirror_root))
+        except RuntimeError as exc:
+            return error(409, str(exc))
+
     async def health(request: Request):
         return JSONResponse({"version": __version__, "decks_root": str(config.decks_root),
                              "export_root": str(config.export_root)})
 
     async def decks(request: Request):
         out = store.as_dicts(await run_in_threadpool(store.list_decks, config.decks_root))
-        if config.publishing:
+        if config.publishing and versioning.on_history(config.mirror_root):   # no switches on another branch
             public = set(publish.public_decks(config.mirror_root))
             for d in out:
                 d["public"] = d["name"] in public and publish.included(d["name"], config.publish_exclude)
         return JSONResponse(out)
 
     async def publishing(request: Request):
-        return JSONResponse({"enabled": config.publishing})
+        if not config.publishing or not versioning.on_history(config.mirror_root):
+            return JSONResponse({"enabled": False})
+        public = [n for n in publish.public_decks(config.mirror_root) if publish.included(n, config.publish_exclude)]
+        last = await run_in_threadpool(publish.last_published, config.mirror_root, config.publish_remote)
+        return JSONResponse({"enabled": True, "public": len(public), "last": last or None,
+                             "site": config.publish_index_url or None})
+
+    async def publish_now(request: Request):
+        if not config.publishing:
+            return error(404, "publishing is not configured (publish_remote)")
+        if (err := wrong_branch()) is not None:
+            return err
+        try:
+            commit, names, changed, _ = await run_in_threadpool(publish.publish_site, config)
+        except (publish.PrivateDeckError, publish.PushError) as exc:
+            return error(502, str(exc))
+        last = await run_in_threadpool(publish.last_published, config.mirror_root, config.publish_remote)
+        return JSONResponse({"snapshot": commit[:7], "decks": len(names), "changed": changed, "last": last or None})
 
     async def visibility(request: Request):
         d, err = deck_or_error(request)
@@ -91,6 +125,8 @@ def create_app(config: Config, host: Host | None = None, allowed_hosts: set[str]
             return err
         if not config.publishing:
             return error(404, "publishing is not configured (publish_remote)")
+        if (err := wrong_branch()) is not None:
+            return err
         public = bool((await request.json()).get("public"))
         if public and not publish.included(d.name, config.publish_exclude):
             return error(409, f"{d.name} is in publish_exclude: it is never published")
@@ -109,6 +145,8 @@ def create_app(config: Config, host: Host | None = None, allowed_hosts: set[str]
     async def duplicate_deck(request: Request):
         d, err = deck_or_error(request)
         if d is None:
+            return err
+        if (err := wrong_branch()) is not None:
             return err
         body = await request.json()
         title = str(body.get("title", "")).strip()
@@ -147,6 +185,8 @@ def create_app(config: Config, host: Host | None = None, allowed_hosts: set[str]
         d, err = deck_or_error(request)
         if d is None:
             return err
+        if (err := wrong_branch()) is not None:
+            return err
         body = await request.json()
         title = str(body.get("title", "")).strip()
         if not title:
@@ -175,6 +215,8 @@ def create_app(config: Config, host: Host | None = None, allowed_hosts: set[str]
     async def remove(request: Request):
         d, err = deck_or_error(request)
         if d is None:
+            return err
+        if (err := wrong_branch()) is not None:
             return err
         await run_in_threadpool(historian.flush, time.time())
         where = await run_in_threadpool(store.trash, config.decks_root, d)
@@ -236,6 +278,8 @@ def create_app(config: Config, host: Host | None = None, allowed_hosts: set[str]
     async def history_restore(request: Request):
         d, err = deck_or_error(request)
         if d is None:
+            return err
+        if (err := wrong_branch()) is not None:
             return err
         try:
             await run_in_threadpool(versioning.restore, config.mirror_root, d, request.path_params["rev"])
@@ -374,6 +418,9 @@ def create_app(config: Config, host: Host | None = None, allowed_hosts: set[str]
         Route("/api/decks/{name}/rename", rename_deck, methods=["POST"]),
         Route("/api/decks/{name}/visibility", visibility, methods=["POST"]),
         Route("/api/publishing", publishing),
+        Route("/api/publish", publish_now, methods=["POST"]),
+        Route("/api/mirror", mirror_state),
+        Route("/api/mirror/switch", mirror_switch, methods=["POST"]),
         Route("/api/decks/{name}/media", upload, methods=["POST"]),
         Route("/api/decks/{name}/media/copy", media_copy, methods=["POST"]),
         Route("/api/decks/{name}/exports", exports),

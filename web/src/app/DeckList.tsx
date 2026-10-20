@@ -1,7 +1,7 @@
 // Deck browser: the decks edited most recently, then every deck by year, each shown by its
 // first slide.
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
-import { api, type DeckInfo } from "./api";
+import { api, type DeckInfo, type Publishing } from "./api";
 import { Icon } from "./icons";
 import { renderSlide } from "./slide";
 import { Modal, ModalHead, ThemeToggle } from "./ui";
@@ -50,7 +50,7 @@ function Card({ deck, recent = false, onDuplicate, onRename, onVisibility }: {
         <div class="od-card-meta">
           <span>{recent ? edited(deck.modified) : `${monthOf(deck)} ${yearOf(deck)}`}</span>
           <span>{deck.slides} slides</span>
-          {deck.public && <span class="od-public" title="Published by opendeck publish"><Icon name="globe" size={13} />Public</span>}
+          {deck.public && <span class="od-public" title="Public: on the website after the next Publish"><Icon name="globe" size={13} />Public</span>}
         </div>
       </a>
         {deck.public !== undefined && (
@@ -154,6 +154,46 @@ function RenameDeck({ deck, onClose, onDone }: { deck: DeckInfo; onClose: () => 
   );
 }
 
+const when = (iso: string) => new Date(iso).toLocaleString(undefined, { day: "numeric", month: "short", year: "numeric",
+                                                                       hour: "2-digit", minute: "2-digit" });
+
+/** Push the public decks to the website: the editor's `opendeck publish`. */
+function PublishSite({ info, onClose, onDone }: { info: Publishing; onClose: () => void; onDone: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState("");
+  const [error, setError] = useState("");
+  const run = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      const r = await api.publish();
+      setDone(r.changed ? `Published ${r.decks} decks (snapshot ${r.snapshot}).`
+        : `Already up to date: the site has these ${r.decks} decks.`);
+      onDone();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+    setBusy(false);
+  };
+  const n = info.public ?? 0;
+  return (
+    <Modal label="Publish the website" onClose={onClose} busy={busy} class="od-modal-sm">
+      <ModalHead title="Publish the website" onClose={onClose}
+        sub={<>Pushes the {n} public {n === 1 ? "deck" : "decks"} as they are now{info.site ? <> to <code>{info.site.replace(/^https?:\/\//, "")}</code></> : null}. Private decks never leave this computer.</>} />
+      <div class="od-modal-body">
+        <p class="od-hint">{info.last ? `Last published ${when(info.last)}.` : "Never published from this computer."}</p>
+        {done && <p class="od-note od-note-ok"><Icon name="check" size={16} /><span>{done}</span></p>}
+        {error && <p class="od-note od-note-error"><Icon name="warning" size={16} /><span>{error}</span></p>}
+        <footer class="od-modal-foot">
+          <button type="button" class="od-btn" onClick={onClose} disabled={busy}>{done ? "Close" : "Cancel"}</button>
+          {!done && <button type="button" class="od-btn primary" onClick={run} disabled={busy}>
+            <Icon name="publish" size={16} />{busy ? "Publishing…" : "Publish"}</button>}
+        </footer>
+      </div>
+    </Modal>
+  );
+}
+
 function Skeleton() {
   return (
     <section class="od-year" aria-hidden="true">
@@ -174,15 +214,19 @@ export function DeckList() {
   const [creating, setCreating] = useState(false);
   const [copying, setCopying] = useState<DeckInfo | null>(null);
   const [renaming, setRenaming] = useState<DeckInfo | null>(null);
+  const [publishing, setPublishing] = useState<Publishing | null>(null);
+  const [publishOpen, setPublishOpen] = useState(false);
+  const refreshPublishing = () => void api.publishing().then(setPublishing).catch(() => setPublishing(null));
   const search = useRef<HTMLInputElement>(null);
 
   // private -> public is rare and publishes the deck: ask first; public -> private does not
   const toggleVisibility = async (d: DeckInfo) => {
     const next = !d.public;
-    if (next && !confirm(`Make “${d.title}” public?\n\nIt will be on the published website after the next “opendeck publish”.`)) return;
+    if (next && !confirm(`Make “${d.title}” public?\n\nIt will be on the website after the next Publish.`)) return;
     try {
       await api.setVisibility(d.name, next);
       setDecks((all) => all && all.map((x) => (x.name === d.name ? { ...x, public: next } : x)));
+      refreshPublishing();
     } catch (e) {
       alert(String((e as Error).message ?? e));
     }
@@ -191,6 +235,7 @@ export function DeckList() {
   useEffect(() => {
     document.title = "opendeck";
     api.decks().then(setDecks).catch((e) => setError(String(e.message ?? e)));
+    refreshPublishing();
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "/" && !(e.target as HTMLElement).closest("input, textarea")) { e.preventDefault(); search.current?.focus(); }
     };
@@ -225,6 +270,13 @@ export function DeckList() {
         </label>
         <div class="od-home-actions">
           <ThemeToggle />
+          {publishing?.enabled && (
+            <button class="od-btn" onClick={() => setPublishOpen(true)}
+              title={publishing.last ? `Push the public decks to the website. Last published ${when(publishing.last)}.`
+                : "Push the public decks to the website."}>
+              <Icon name="publish" size={16} />Publish
+            </button>
+          )}
           <button class="od-btn primary" onClick={() => setCreating(true)}><Icon name="plus" size={16} />New deck</button>
         </div>
       </header>
@@ -274,6 +326,7 @@ export function DeckList() {
       </main>
       {creating && <NewDeck onClose={() => setCreating(false)} />}
       {copying && <NewDeck source={copying} onClose={() => setCopying(null)} />}
+      {publishOpen && publishing && <PublishSite info={publishing} onClose={() => setPublishOpen(false)} onDone={refreshPublishing} />}
       {renaming && <RenameDeck deck={renaming} onClose={() => setRenaming(null)}
         onDone={() => { setRenaming(null); void api.decks().then(setDecks); }} />}
     </div>

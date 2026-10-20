@@ -318,7 +318,7 @@ def test_visibility_endpoint_only_when_publishing(tmp_path):
     cfg = Config(decks_root=root, mirror_root=tmp_path / "m2", publish_remote="git@example.org:me/d.git",
                  publish_exclude=("*_claude-playground",))
     on = TestClient(create_app(cfg), base_url="http://127.0.0.1")
-    assert on.get("/api/publishing").json() == {"enabled": True}
+    assert on.get("/api/publishing").json() == {"enabled": True, "public": 0, "last": None, "site": None}
     assert {d["name"]: d["public"] for d in on.get("/api/decks").json()} == {
         "2024-12_talk": False, "2026-10_claude-playground": False}
     assert on.post("/api/decks/2024-12_talk/visibility", json={"public": True}, headers=h).json()["public"]
@@ -333,6 +333,49 @@ def test_visibility_endpoint_only_when_publishing(tmp_path):
     priv_copy = on.post(f"/api/decks/{new}/duplicate", json={"title": "Copy of private"}, headers=h).json()["name"]
     assert set(publish.public_decks(cfg.mirror_root)) == {"2024-12_renamed-talk", pub_copy}
     assert new not in publish.public_decks(cfg.mirror_root) and priv_copy not in publish.public_decks(cfg.mirror_root)
+
+
+@pytest.mark.skipif(not (runtime.BUILD / "opendeck.js").is_file(), reason="runtime not built")
+def test_publish_endpoint_pushes_the_public_decks(tmp_path):
+    from starlette.testclient import TestClient
+
+    from opendeck.config import Config
+    from opendeck.server.app import create_app
+
+    root, remote = tmp_path / "decks", tmp_path / "remote.git"
+    root.mkdir()
+    deck(root, "2024-12_talk", "A talk")
+    deck(root, "2025-01_secret", "Secret")
+    subprocess.run(["git", "init", "-q", "--bare", str(remote)], check=True)
+    h = {"X-Opendeck": "1"}
+    off = TestClient(create_app(Config(decks_root=root, mirror_root=tmp_path / "m0")), base_url="http://127.0.0.1")
+    assert off.post("/api/publish", headers=h).status_code == 404
+    cfg = Config(decks_root=root, mirror_root=tmp_path / "mirror", publish_remote=str(remote))
+    c = TestClient(create_app(cfg), base_url="http://127.0.0.1")
+    assert c.post("/api/publish").status_code == 403                  # the X-Opendeck guard
+    assert c.post("/api/decks/2024-12_talk/visibility", json={"public": True}, headers=h).status_code == 200
+    r = c.post("/api/publish", headers=h).json()
+    assert r["decks"] == 1 and r["changed"] and r["last"]
+    assert git(remote, "rev-parse", "main").strip().startswith(r["snapshot"])
+    assert git(remote, "ls-tree", "--name-only", "-d", "main").split() == ["2024-12_talk"]
+    info = c.get("/api/publishing").json()
+    assert info["public"] == 1 and info["last"] == r["last"]
+    assert not c.post("/api/publish", headers=h).json()["changed"]    # nothing new: same snapshot
+
+
+def test_publish_endpoint_reports_a_failed_push(tmp_path):
+    from starlette.testclient import TestClient
+
+    from opendeck.config import Config
+    from opendeck.server.app import create_app
+
+    root = tmp_path / "decks"
+    root.mkdir()
+    deck(root, "2024-12_talk", "A talk")
+    cfg = Config(decks_root=root, mirror_root=tmp_path / "mirror", publish_remote=str(tmp_path / "missing.git"))
+    c = TestClient(create_app(cfg), base_url="http://127.0.0.1")
+    r = c.post("/api/publish", headers={"X-Opendeck": "1"})
+    assert r.status_code == 502 and "missing.git" in r.json()["error"]
 
 
 @pytest.mark.skipif(not (runtime.BUILD / "opendeck.js").is_file(), reason="runtime not built")
@@ -420,3 +463,45 @@ def test_cli_imports_follow_mirror_media(tmp_path, monkeypatch):
     monkeypatch.setattr(versioning, "MIRROR_MEDIA", False)
     cli._migrate_import(argparse.Namespace(force=False))
     assert seen == [True, True]
+
+
+def test_history_on_another_branch_is_left_alone_until_switched_back(tmp_path):
+    from starlette.testclient import TestClient
+
+    from opendeck.config import Config
+    from opendeck.server.app import create_app
+
+    root, mirror = tmp_path / "decks", tmp_path / "mirror"
+    root.mkdir()
+    d = deck(root, "2024-12_talk", "A talk")
+    assert versioning.commit(mirror, d, "first")
+    publish.set_public(mirror, d.name, True)
+    git(mirror, "checkout", "-q", "-b", "public")                    # a hand-made checkout of another branch
+    h = {"X-Opendeck": "1"}
+    c = TestClient(create_app(Config(decks_root=root, mirror_root=mirror, publish_remote="git@example.org:me/d.git")),
+                   base_url="http://127.0.0.1")
+    assert c.get("/api/mirror").json() == {"branch": "public", "ok": False, "can_switch": True}
+    assert "public" not in c.get("/api/decks").json()[0]             # no switches
+    assert c.get("/api/publishing").json() == {"enabled": False}       # no Publish button
+    for method, url, body in [("post", f"/api/decks/{d.name}/visibility", {"public": False}),
+                              ("post", "/api/publish", None),
+                              ("post", f"/api/decks/{d.name}/rename", {"title": "Other"}),
+                              ("post", f"/api/decks/{d.name}/duplicate", {"title": "Copy"}),
+                              ("delete", f"/api/decks/{d.name}", None)]:
+        r = getattr(c, method)(url, headers=h, **({"json": body} if body is not None else {}))
+        assert r.status_code == 409 and "not main" in r.json()["error"], url
+    (d / "index.html").write_text((d / "index.html").read_text(encoding="utf-8") + "\n", encoding="utf-8")
+    assert not versioning.commit(mirror, d, "edit")                    # history paused
+    with pytest.raises(publish.WrongBranchError):
+        publish.set_public(mirror, d.name, False)
+    with pytest.raises(publish.WrongBranchError):
+        publish.build(root, mirror)
+    assert git(mirror, "rev-parse", "public") == git(mirror, "rev-parse", "main")   # nothing landed on it
+
+    (mirror / d.name / "index.html").write_text("changed by hand", encoding="utf-8")
+    assert c.get("/api/mirror").json()["can_switch"] is False          # uncommitted change: not from here
+    assert c.post("/api/mirror/switch", headers=h).status_code == 409
+    git(mirror, "checkout", "-q", "--", d.name)
+    assert c.post("/api/mirror/switch", headers=h).json() == {"branch": "main", "ok": True, "can_switch": False}
+    assert c.get("/api/decks").json()[0]["public"] is True
+    assert versioning.commit(mirror, d, "edit")                        # the paused edit goes in now

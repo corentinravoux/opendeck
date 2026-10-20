@@ -133,23 +133,19 @@ def _gui(args) -> int:
 
 
 def _publish(args) -> int:
-    from .deck import publish, versioning
+    from .deck import publish
 
     config = load()
     if not config.publishing and not args.no_push and not args.remote:
         sys.exit("publishing is off: set publish_remote in the config file (or pass --remote / --no-push)")
-    versioning.MIRROR_MEDIA = config.mirror_media
     remote = args.remote or config.publish_remote
-    if remote and remote == config.publish_remote:
-        publish.adopt_legacy_boundary(config.mirror_root, publish.push_url(config.mirror_root, remote))
-    commit, names, changed = publish.build(config.decks_root, config.mirror_root, config.publish_exclude,
-                                           config.publish_title, config.publish_lfs, config.publish_index_url,
-                                           remote=remote or None)
+    try:
+        commit, names, changed, pushed = publish.publish_site(config, remote, push_it=not args.no_push)
+    except (publish.PrivateDeckError, publish.PushError, publish.WrongBranchError) as exc:
+        sys.exit(f"not published: {exc}")
     print(f"{len(names)} decks in snapshot {commit[:7]}" + ("" if changed else " (unchanged)"))
-    if args.no_push or not remote:
+    if not pushed:
         print("not pushed" + ("" if remote else ": no publish_remote in the config file"))
-        return 0
-    publish.push(config.mirror_root, remote)
     return 0
 
 
@@ -160,6 +156,10 @@ def _visibility(args) -> int:
     config = load()
     if not config.publishing:
         sys.exit("publishing is off: set publish_remote in the config file to give decks a visibility")
+    try:
+        publish.require_history(config.mirror_root)
+    except publish.WrongBranchError as exc:
+        sys.exit(str(exc))
     if args.deck is None:
         public = publish.public_decks(config.mirror_root)
         print("\n".join(public) if public else "every deck is private")

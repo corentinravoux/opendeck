@@ -9,6 +9,7 @@ import { render } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import { DeckList } from "./DeckList";
 import { DeckView } from "./DeckView";
+import { MirrorCheck } from "./MirrorCheck";
 
 function route(): { deck: string | null } {
   const m = /^#\/deck\/(.+)$/.exec(location.hash);
@@ -22,7 +23,7 @@ function App() {
     addEventListener("hashchange", onHash);
     return () => removeEventListener("hashchange", onHash);
   }, []);
-  return r.deck ? <DeckView name={r.deck} /> : <DeckList />;
+  return <>{r.deck ? <DeckView name={r.deck} /> : <DeckList />}<MirrorCheck /></>;
 }
 
 render(<App />, document.getElementById("app")!);

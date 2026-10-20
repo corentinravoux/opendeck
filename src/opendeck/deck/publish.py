@@ -35,9 +35,13 @@ import shutil
 import subprocess
 from html import escape
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from ..export import runtime
 from . import store, versioning
+
+if TYPE_CHECKING:
+    from ..config import Config
 
 BRANCH = "public"
 LEGACY_PUSHED = "refs/opendeck/pushed"      # one boundary for every destination (before per-destination boundaries)
@@ -143,6 +147,7 @@ def forget(mirror: Path, names) -> bool:
 
 
 def _write_whitelist(mirror: Path, names, message: str) -> bool:
+    require_history(mirror)
     versioning.ensure_repo(mirror)
     tmp = mirror / f".{GITIGNORE}.tmp"
     tmp.write_text(_HEADER + "".join(f"!/{n}/\n" for n in sorted(names)), encoding="utf-8")
@@ -361,6 +366,7 @@ def build(decks_root: Path, mirror: Path, exclude: tuple[str, ...] | list[str] =
     `branch` of `remote` (its parent: the last snapshot pushed there; none without `remote`, or
     for a destination never pushed to). Returns (commit, published deck names, whether branch
     `public` moved)."""
+    require_history(mirror)
     versioning.ensure_repo(mirror)
     all_decks = store.list_decks(decks_root)
     for d in all_decks:
@@ -450,6 +456,14 @@ class PrivateDeckError(RuntimeError):
     pass
 
 
+WrongBranchError = versioning.WrongBranchError
+require_history = versioning.require_history
+
+
+class PushError(RuntimeError):
+    """git push failed; the message is git's."""
+
+
 def check(mirror: Path, url: str | None = None, remote_ref: str = "refs/heads/main",
           sha: str | None = None, remote_sha: str | None = None) -> str:
     """The snapshot about to be pushed (`sha`, default: branch `public`), after checking that it
@@ -482,5 +496,34 @@ def push(mirror: Path, remote: str, branch: str = "main") -> None:
         url, ref = push_url(mirror, remote), f"refs/heads/{branch}"
         tip = check(mirror, url, ref)
         install_hook(mirror)
-        subprocess.run(["git", "-C", str(mirror), "push", remote, f"refs/heads/{BRANCH}:{ref}"], check=True)
+        # no prompt: from the editor there is no terminal to type a password into
+        r = subprocess.run(["git", "-C", str(mirror), "push", remote, f"refs/heads/{BRANCH}:{ref}"],
+                           capture_output=True, text=True, env={**os.environ, "GIT_TERMINAL_PROMPT": "0"})
+        if r.returncode != 0:
+            raise PushError(r.stderr.strip() or f"git push exited with {r.returncode}")
         _git(mirror, "update-ref", _boundary_ref(url, ref), tip)
+
+
+def last_published(mirror: Path, remote: str, branch: str = "main") -> str:
+    """When the last snapshot was pushed to `branch` of `remote` (ISO 8601; "" if never)."""
+    # an earlier version's single boundary counts until the next publish adopts it
+    sha = (pushed(mirror, push_url(mirror, remote), branch)
+           or _git(mirror, "rev-parse", "--verify", "-q", LEGACY_PUSHED, check=False))
+    return _git(mirror, "log", "-1", "--format=%cI", sha) if sha else ""
+
+
+def publish_site(config: Config, remote: str | None = None, push_it: bool = True) -> tuple[str, list[str], bool, bool]:
+    """What `opendeck publish` and the editor's Publish button do: snapshot the public decks, then
+    push the snapshot to `remote` (default: publish_remote). Returns (snapshot, its decks, whether
+    it changed, whether it was pushed)."""
+    versioning.MIRROR_MEDIA = config.mirror_media
+    remote = remote or config.publish_remote
+    if remote and remote == config.publish_remote:
+        adopt_legacy_boundary(config.mirror_root, push_url(config.mirror_root, remote))
+    commit, names, changed = build(config.decks_root, config.mirror_root, config.publish_exclude,
+                                   config.publish_title, config.publish_lfs, config.publish_index_url,
+                                   remote=remote or None)
+    if not push_it or not remote:
+        return commit, names, changed, False
+    push(config.mirror_root, remote)
+    return commit, names, changed, True
