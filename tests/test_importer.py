@@ -3,11 +3,10 @@ import re
 import zipfile
 
 import pytest
+from conftest import EXAMPLES, PNG
 
 from opendeck.deck import template, versioning
 from opendeck.importer.slidescom import ExportSource, import_export
-
-from conftest import EXAMPLES, PNG
 
 
 @pytest.mark.parametrize("as_zip", [True, False])

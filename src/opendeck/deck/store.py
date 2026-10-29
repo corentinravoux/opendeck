@@ -81,7 +81,8 @@ def remember_export(deck: Path, kind: str, folder: Path, name: str, as_zip: bool
     state = _state(deck)
     entry = {"kind": kind, "dir": str(folder), "name": name, "zip": as_zip,
              "at": datetime.now(timezone.utc).isoformat(timespec="seconds")}
-    same = lambda e: (e["kind"], e["dir"], e["name"], e.get("zip", False)) == (kind, str(folder), name, as_zip)
+    def same(e):
+        return (e["kind"], e["dir"], e["name"], e.get("zip", False)) == (kind, str(folder), name, as_zip)
     state["exports"] = [entry] + [e for e in state.get("exports", []) if not same(e)][: MAX_REMEMBERED - 1]
     _write_state(deck, state)
 
@@ -264,7 +265,8 @@ def rename(decks_root: Path, deck: Path, title: str, mirror: Path | None = None)
     if deck.name == base or re.fullmatch(re.escape(base) + r"-\d+", deck.name):
         name = deck.name  # same slug: keep the folder
     else:
-        taken = lambda n: (decks_root / n).exists() or _had_deck(mirror, n)
+        def taken(n):
+            return (decks_root / n).exists() or _had_deck(mirror, n)
         name, n = base, 2
         while taken(name):
             name, n = f"{base}-{n}", n + 1

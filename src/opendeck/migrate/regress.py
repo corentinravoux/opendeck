@@ -19,7 +19,6 @@ import html
 import json
 import shutil
 import subprocess
-import tempfile
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 

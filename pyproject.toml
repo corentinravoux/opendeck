@@ -34,7 +34,7 @@ Homepage = "https://github.com/corentinravoux/opendeck"
 Issues = "https://github.com/corentinravoux/opendeck/issues"
 
 [project.optional-dependencies]
-dev = ["pytest"]
+dev = ["pytest", "httpx2", "ruff"]
 
 [project.scripts]
 opendeck = "opendeck.cli:main"
@@ -51,3 +51,21 @@ opendeck = ["_web/**/*", "shell/*.svg"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = ["examples: uses the real decks in Slides_deck/examples (skipped when absent)"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E501"]
+
+[tool.bumpversion]
+current_version = "0.0.1"
+commit = true
+tag = true
+tag_name = "v{new_version}"
+message = "Bump version: {current_version} → {new_version}"
+
+[[tool.bumpversion.files]]
+filename = "src/opendeck/__init__.py"

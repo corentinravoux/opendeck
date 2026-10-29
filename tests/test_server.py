@@ -9,7 +9,6 @@ from opendeck.server.app import create_app
 from opendeck.server.host import Host
 
 
-
 def _png() -> bytes:
     import io
 

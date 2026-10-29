@@ -1,5 +1,7 @@
 # opendeck
 
+[![tests](https://github.com/corentinravoux/opendeck/actions/workflows/tests.yml/badge.svg)](https://github.com/corentinravoux/opendeck/actions/workflows/tests.yml)
+
 Free local HTML slide editor, in the spirit of slides.com — https://github.com/corentinravoux/opendeck
 
 - **Decks:** each deck is a folder holding an `index.html` that opens in any browser, a `media/`

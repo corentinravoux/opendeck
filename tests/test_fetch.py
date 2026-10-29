@@ -3,7 +3,13 @@ import zipfile
 
 import pytest
 
-from opendeck.migrate.fetch import DeckEntry, Manifest, RequestGuard, check_download, parse_created
+from opendeck.migrate.fetch import (
+    DeckEntry,
+    Manifest,
+    RequestGuard,
+    check_download,
+    parse_created,
+)
 
 
 def test_folder_name_uses_creation_month():

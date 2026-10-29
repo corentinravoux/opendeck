@@ -194,7 +194,8 @@ def test_media_are_renormalised_only_when_the_filters_change(tmp_path, monkeypat
     calls = []
     real = publish._git
     monkeypatch.setattr(publish, "_git", lambda m, *a, **k: (calls.append(a), real(m, *a, **k))[1])
-    renormalised = lambda: sum("--renormalize" in a for a in calls)
+    def renormalised():
+        return sum("--renormalize" in a for a in calls)
     publish.build(root, mirror)
     assert renormalised() == 1                      # first snapshot
     publish.build(root, mirror)

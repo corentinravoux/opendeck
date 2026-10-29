@@ -1,10 +1,9 @@
 import pytest
+from conftest import SLIDES, export_page
 
 from opendeck.deck import template
 from opendeck.deck.meta import DeckMeta
 from opendeck.importer.htmlregion import page_title, slconfig, slides_region
-
-from conftest import SLIDES, export_page
 
 
 def test_slides_region_is_verbatim():

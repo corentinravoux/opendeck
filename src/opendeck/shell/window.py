@@ -9,7 +9,6 @@
 from __future__ import annotations
 
 import os
-import sys
 import threading
 from pathlib import Path
 
@@ -26,7 +25,11 @@ def run(config: Config, deck: str | None = None) -> int:
 
     from PySide6.QtCore import QObject, QTimer, QUrl, Signal, Slot
     from PySide6.QtGui import QDesktopServices, QGuiApplication, QIcon
-    from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineProfile, QWebEngineSettings
+    from PySide6.QtWebEngineCore import (
+        QWebEnginePage,
+        QWebEngineProfile,
+        QWebEngineSettings,
+    )
     from PySide6.QtWebEngineWidgets import QWebEngineView
     from PySide6.QtWidgets import QApplication, QFileDialog, QMainWindow
 

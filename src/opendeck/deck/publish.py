@@ -29,8 +29,8 @@ already have: a new destination starts from a snapshot with no parent.
 from __future__ import annotations
 
 import fnmatch
-import shlex
 import os
+import shlex
 import shutil
 import subprocess
 from html import escape
@@ -404,8 +404,10 @@ def _snapshot(decks_root: Path, mirror: Path, decks: list[store.DeckInfo], title
     names = [d.name for d in decks]
     prev = _git(mirror, "rev-parse", "--verify", "-q", f"refs/heads/{BRANCH}", check=False)
     base = pushed(mirror, push_url(mirror, remote), branch) if remote else ""
-    tree_of = lambda c: _git(mirror, "rev-parse", f"{c}^{{tree}}")
-    parents_of = lambda c: _git(mirror, "rev-list", "--parents", "-n", "1", c).split()[1:]
+    def tree_of(c):
+        return _git(mirror, "rev-parse", f"{c}^{{tree}}")
+    def parents_of(c):
+        return _git(mirror, "rev-list", "--parents", "-n", "1", c).split()[1:]
     if base and tree_of(base) == tree:
         commit = base                        # what the destination already has
     elif prev and tree_of(prev) == tree and parents_of(prev) == ([base] if base else []):
