@@ -137,7 +137,8 @@ def _publish(args) -> int:
 
     config = load()
     if not config.publishing and not args.no_push and not args.remote:
-        sys.exit("publishing is off: set publish_remote in the config file (or pass --remote / --no-push)")
+        sys.exit("publishing is off: set publish_remote or publish_cloudflare in the config file "
+                 "(or pass --remote / --no-push)")
     remote = args.remote or config.publish_remote
     try:
         commit, names, changed, pushed = publish.publish_site(config, remote, push_it=not args.no_push)
@@ -145,7 +146,8 @@ def _publish(args) -> int:
         sys.exit(f"not published: {exc}")
     print(f"{len(names)} decks in snapshot {commit[:7]}" + ("" if changed else " (unchanged)"))
     if not pushed:
-        print("not pushed" + ("" if remote else ": no publish_remote in the config file"))
+        print("not published" + ("" if remote or config.publish_cloudflare
+                                 else ": no publish_remote or publish_cloudflare in the config file"))
     return 0
 
 
@@ -242,7 +244,7 @@ def main(argv: list[str] | None = None) -> None:
     op.add_argument("deck", nargs="?", help="deck folder name to open directly")
     op.set_defaults(func=_gui)
 
-    pb = sub.add_parser("publish", help="snapshot every deck not in publish_exclude and push it to publish_remote")
+    pb = sub.add_parser("publish", help="snapshot the public decks and push them to publish_remote / deploy them to publish_cloudflare")
     pb.add_argument("--remote", help="git remote URL (default: publish_remote from the config file)")
     pb.add_argument("--no-push", action="store_true", help="build the snapshot only")
     pb.set_defaults(func=_publish)

@@ -108,20 +108,22 @@ def create_app(config: Config, host: Host | None = None, allowed_hosts: set[str]
         if not config.publishing or not versioning.on_history(config.mirror_root):
             return JSONResponse({"enabled": False})
         public = [n for n in publish.public_decks(config.mirror_root) if publish.included(n, config.publish_exclude)]
-        last = await run_in_threadpool(publish.last_published, config.mirror_root, config.publish_remote)
+        last = await run_in_threadpool(publish.last_published, config.mirror_root, config.publish_remote,
+                                       cloudflare=config.publish_cloudflare)
         return JSONResponse({"enabled": True, "public": len(public), "last": last or None,
                              "site": config.publish_index_url or None})
 
     async def publish_now(request: Request):
         if not config.publishing:
-            return error(404, "publishing is not configured (publish_remote)")
+            return error(404, "publishing is not configured (publish_remote, publish_cloudflare)")
         if (err := wrong_branch()) is not None:
             return err
         try:
             commit, names, changed, _ = await run_in_threadpool(publish.publish_site, config)
         except (publish.PrivateDeckError, publish.PushError) as exc:
             return error(502, str(exc))
-        last = await run_in_threadpool(publish.last_published, config.mirror_root, config.publish_remote)
+        last = await run_in_threadpool(publish.last_published, config.mirror_root, config.publish_remote,
+                                       cloudflare=config.publish_cloudflare)
         return JSONResponse({"snapshot": commit[:7], "decks": len(names), "changed": changed, "last": last or None})
 
     async def visibility(request: Request):
@@ -129,7 +131,7 @@ def create_app(config: Config, host: Host | None = None, allowed_hosts: set[str]
         if d is None:
             return err
         if not config.publishing:
-            return error(404, "publishing is not configured (publish_remote)")
+            return error(404, "publishing is not configured (publish_remote, publish_cloudflare)")
         if (err := wrong_branch()) is not None:
             return err
         public = bool((await request.json()).get("public"))

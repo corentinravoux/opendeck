@@ -24,6 +24,12 @@ The tree is staged under <mirror>/.git/opendeck-public with its own index, so un
 not rehashed. Each snapshot's parent is the last one pushed to the same destination (remote URL
 and branch), so nothing unpushed piles up, and a destination never receives snapshots it did not
 already have: a new destination starts from a snapshot with no parent.
+
+The same staged tree can also (or instead) be deployed as the static assets of a Cloudflare Worker
+(publish_cloudflare, by `wrangler deploy`): wrangler uploads only the files whose content changed,
+so a deploy after one deck was edited sends that deck alone. Only the files are deployed, never a
+history; the deploy is refused unless every deck folder of the tree is public, and dotfiles
+(.gitignore, .github, ...) stay out of it.
 """
 
 from __future__ import annotations
@@ -49,6 +55,10 @@ PUSHED = "refs/opendeck/pushed-to"          # + /<key of remote URL and branch>:
 STAGE = "opendeck-public"
 STAGE_LOCK = "opendeck-public.lock"         # one build or push at a time (the history lock is not held)
 GITIGNORE = "publish.gitignore"
+DEPLOYED = "refs/opendeck/deployed-cloudflare"   # + /<worker>: the last snapshot deployed there
+WRANGLER = ("npx", "--yes", "wrangler")           # the Cloudflare CLI (Node.js); log in once: `npx wrangler login`
+COMPATIBILITY_DATE = "2026-11-04"
+ASSETSIGNORE = ".*\n"                            # dotfiles are not deployed (deck names never start with ".")
 LFS_ATTRIBUTES = "*/media/** filter=lfs diff=lfs merge=lfs -text\n"
 WORKFLOW = """# Written by opendeck: deploys this repository as a GitHub Pages site. The media are in Git LFS,
 # which Pages does not serve from a branch, so the site is built here with the LFS files pulled
@@ -506,18 +516,68 @@ def push(mirror: Path, remote: str, branch: str = "main") -> None:
         _git(mirror, "update-ref", _boundary_ref(url, ref), tip)
 
 
-def last_published(mirror: Path, remote: str, branch: str = "main") -> str:
-    """When the last snapshot was pushed to `branch` of `remote` (ISO 8601; "" if never)."""
-    # an earlier version's single boundary counts until the next publish adopts it
-    sha = (pushed(mirror, push_url(mirror, remote), branch)
-           or _git(mirror, "rev-parse", "--verify", "-q", LEGACY_PUSHED, check=False))
+def _deployed_ref(worker: str) -> str:
+    return f"{DEPLOYED}/{worker}"
+
+
+def deploy_cloudflare(mirror: Path, worker: str) -> str:
+    """Deploy the staged snapshot (the tree of branch `public`, as last built) as the static assets
+    of Cloudflare Worker `worker`. Returns the snapshot deployed. Raises PrivateDeckError if a deck
+    folder in it is not public, PushError if wrangler fails."""
+    import json
+
+    if not paths_ok(worker):
+        raise ValueError(f"invalid Cloudflare Worker name {worker!r}")
+    with versioning.locked(mirror, STAGE_LOCK):      # no build changes the staged tree meanwhile
+        git_dir = mirror / ".git"
+        stage = git_dir / STAGE
+        tip = _git(mirror, "rev-parse", "--verify", f"refs/heads/{BRANCH}")
+        public = set(public_decks(mirror))
+        # what is uploaded is the staged tree: check it, not only the commit
+        folders = {e.name for e in stage.iterdir() if e.is_dir() and not e.name.startswith(".")}
+        private = sorted(folders - public)
+        if private:
+            raise PrivateDeckError(f"the staged site holds decks that are not public: {', '.join(private)}")
+        tree = {line.split("\t", 1)[1] for line in _git(mirror, "ls-tree", tip).splitlines()
+                if line.split()[1] == "tree" and not line.split("\t", 1)[1].startswith(".")}
+        if tree != folders:
+            raise PrivateDeckError("the staged site is not the last snapshot built: publish again")
+        config = git_dir / "opendeck-cloudflare.json"
+        config.write_text(json.dumps({"name": worker, "compatibility_date": COMPATIBILITY_DATE,
+                                      "assets": {"directory": str(stage)}}, indent=1), encoding="utf-8")
+        ignore = stage / ".assetsignore"
+        ignore.write_text(ASSETSIGNORE, encoding="utf-8")
+        try:
+            # run from inside .git: wrangler writes its cache next to the config, never into the history
+            r = subprocess.run([*WRANGLER, "deploy", "--config", str(config)], cwd=git_dir,
+                               stdin=subprocess.DEVNULL, capture_output=True, text=True,
+                               env={**os.environ, "WRANGLER_SEND_METRICS": "false"})
+        finally:
+            ignore.unlink(missing_ok=True)
+        if r.returncode != 0:
+            lines = [ln for ln in (r.stderr + r.stdout).splitlines() if ln.strip()]
+            raise PushError("wrangler deploy failed: " + "\n".join(lines[-8:]))
+        _git(mirror, "update-ref", _deployed_ref(worker), tip)
+        return tip
+
+
+def last_published(mirror: Path, remote: str, branch: str = "main", cloudflare: str = "") -> str:
+    """When the last snapshot was pushed to `branch` of `remote`, or else deployed to Cloudflare
+    Worker `cloudflare` (ISO 8601; "" if never)."""
+    sha = ""
+    if remote:
+        # an earlier version's single boundary counts until the next publish adopts it
+        sha = (pushed(mirror, push_url(mirror, remote), branch)
+               or _git(mirror, "rev-parse", "--verify", "-q", LEGACY_PUSHED, check=False))
+    if not sha and cloudflare:
+        sha = _git(mirror, "rev-parse", "--verify", "-q", _deployed_ref(cloudflare), check=False)
     return _git(mirror, "log", "-1", "--format=%cI", sha) if sha else ""
 
 
 def publish_site(config: Config, remote: str | None = None, push_it: bool = True) -> tuple[str, list[str], bool, bool]:
     """What `opendeck publish` and the editor's Publish button do: snapshot the public decks, then
-    push the snapshot to `remote` (default: publish_remote). Returns (snapshot, its decks, whether
-    it changed, whether it was pushed)."""
+    push the snapshot to `remote` (default: publish_remote) and deploy it to publish_cloudflare.
+    Returns (snapshot, its decks, whether it changed, whether it was pushed or deployed)."""
     versioning.MIRROR_MEDIA = config.mirror_media
     remote = remote or config.publish_remote
     if remote and remote == config.publish_remote:
@@ -525,7 +585,10 @@ def publish_site(config: Config, remote: str | None = None, push_it: bool = True
     commit, names, changed = build(config.decks_root, config.mirror_root, config.publish_exclude,
                                    config.publish_title, config.publish_lfs, config.publish_index_url,
                                    remote=remote or None)
-    if not push_it or not remote:
+    if not push_it or not (remote or config.publish_cloudflare):
         return commit, names, changed, False
-    push(config.mirror_root, remote)
+    if remote:
+        push(config.mirror_root, remote)
+    if config.publish_cloudflare:
+        deploy_cloudflare(config.mirror_root, config.publish_cloudflare)
     return commit, names, changed, True

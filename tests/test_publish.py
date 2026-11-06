@@ -506,3 +506,91 @@ def test_history_on_another_branch_is_left_alone_until_switched_back(tmp_path):
     assert c.post("/api/mirror/switch", headers=h).json() == {"branch": "main", "ok": True, "can_switch": False}
     assert c.get("/api/decks").json()[0]["public"] is True
     assert versioning.commit(mirror, d, "edit")                        # the paused edit goes in now
+
+
+FAKE_WRANGLER = r'''
+import json, os, sys
+from pathlib import Path
+config = json.loads(Path(sys.argv[sys.argv.index("--config") + 1]).read_text())
+assets = Path(config["assets"]["directory"])
+record = {"argv": sys.argv[1:], "cwd": os.getcwd(), "name": config["name"],
+          "top": sorted(p.name for p in assets.iterdir()),
+          "assetsignore": (assets / ".assetsignore").read_text() if (assets / ".assetsignore").is_file() else None}
+Path(os.environ["FAKE_WRANGLER_OUT"]).write_text(json.dumps(record))
+sys.exit(int(os.environ.get("FAKE_WRANGLER_EXIT", "0")))
+'''
+
+
+@pytest.fixture
+def fake_wrangler(tmp_path, monkeypatch):
+    import json
+    import sys
+
+    script, out = tmp_path / "wrangler.py", tmp_path / "wrangler.json"
+    script.write_text(FAKE_WRANGLER, encoding="utf-8")
+    monkeypatch.setattr(publish, "WRANGLER", (sys.executable, str(script)))
+    monkeypatch.setenv("FAKE_WRANGLER_OUT", str(out))
+    return lambda: json.loads(out.read_text()) if out.is_file() else None
+
+
+def test_publish_config_cloudflare_alone_turns_publishing_on(tmp_path):
+    path = tmp_path / "config.toml"
+    path.write_text('publish_cloudflare = "my-talks"\n', encoding="utf-8")
+    config = load(path)
+    assert config.publish_cloudflare == "my-talks" and config.publishing and not config.publish_remote
+
+
+def test_cloudflare_deploys_only_the_public_decks(tmp_path, fake_wrangler):
+    from opendeck.config import Config
+
+    root, mirror = tmp_path / "decks", tmp_path / "mirror"
+    root.mkdir()
+    deck(root, "2024-12_talk", "A talk")
+    deck(root, "2025-01_secret", "Secret")
+    publish.set_public(mirror, "2024-12_talk", True)
+    cfg = Config(decks_root=root, mirror_root=mirror, publish_cloudflare="my-talks")
+    commit, names, changed, deployed = publish.publish_site(cfg)
+    assert names == ["2024-12_talk"] and changed and deployed
+    seen = fake_wrangler()
+    assert seen["name"] == "my-talks" and seen["argv"][0] == "deploy"
+    assert sorted(n for n in seen["top"] if not n.startswith(".")) == ["2024-12_talk", "README.md", "index.html",
+                                                                       "talks.json"]
+    assert seen["assetsignore"] == ".*\n"                              # dotfiles stay out of the upload
+    assert not (mirror / ".git" / publish.STAGE / ".assetsignore").exists()
+    assert seen["cwd"] == str(mirror / ".git")                         # wrangler's cache never in the history
+    assert git(mirror, "status", "--porcelain", "--untracked-files=all").strip() == ""
+    assert git(mirror, "rev-parse", f"{publish.DEPLOYED}/my-talks").strip() == commit
+    assert publish.last_published(mirror, "", cloudflare="my-talks")
+    assert publish.last_published(mirror, "", cloudflare="other") == ""
+
+
+def test_cloudflare_refuses_a_staged_private_deck(tmp_path, fake_wrangler):
+    root, mirror = tmp_path / "decks", tmp_path / "mirror"
+    root.mkdir()
+    deck(root, "2024-12_talk", "A talk")
+    publish.set_public(mirror, "2024-12_talk", True)
+    publish.build(root, mirror)
+    publish.set_public(mirror, "2024-12_talk", False)                 # made private before the deploy
+    with pytest.raises(publish.PrivateDeckError, match="2024-12_talk"):
+        publish.deploy_cloudflare(mirror, "my-talks")
+    assert fake_wrangler() is None                                     # wrangler never ran
+    # a folder that slipped into the staged tree, not in the snapshot, is refused too
+    publish.set_public(mirror, "2024-12_talk", True)
+    publish.build(root, mirror)
+    (mirror / ".git" / publish.STAGE / "2025-01_stray").mkdir()
+    with pytest.raises(publish.PrivateDeckError, match="2025-01_stray"):
+        publish.deploy_cloudflare(mirror, "my-talks")
+    assert fake_wrangler() is None
+
+
+def test_cloudflare_reports_a_failed_deploy(tmp_path, fake_wrangler, monkeypatch):
+    root, mirror = tmp_path / "decks", tmp_path / "mirror"
+    root.mkdir()
+    deck(root, "2024-12_talk", "A talk")
+    publish.set_public(mirror, "2024-12_talk", True)
+    publish.build(root, mirror)
+    monkeypatch.setenv("FAKE_WRANGLER_EXIT", "1")
+    with pytest.raises(publish.PushError, match="wrangler deploy failed"):
+        publish.deploy_cloudflare(mirror, "my-talks")
+    assert publish.last_published(mirror, "", cloudflare="my-talks") == ""
+    assert not (mirror / ".git" / publish.STAGE / ".assetsignore").exists()

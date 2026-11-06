@@ -15,6 +15,7 @@ Optional, off unless set: keep the media in the history mirror too, and publish 
     publish_exclude = ["*_playground"]          # deck folders (glob patterns) never published, even public
     publish_lfs = true                          # media in Git LFS; the site is deployed by a GitHub Actions workflow
     publish_index_url = "https://you.example/talks.html"   # the talks are listed there: the root redirects
+    publish_cloudflare = "my-talks"             # also (or only) deploy the site as this Cloudflare Worker
 """
 
 from __future__ import annotations
@@ -40,11 +41,13 @@ class Config:
     publish_exclude: tuple[str, ...] = ()
     publish_lfs: bool = False
     publish_index_url: str = ""
+    publish_cloudflare: str = ""
 
     @property
     def publishing(self) -> bool:
-        """Publishing is on only when a remote is configured (decks then get a public/private switch)."""
-        return bool(self.publish_remote)
+        """Publishing is on only when a destination is configured, a git remote or a Cloudflare
+        Worker (decks then get a public/private switch)."""
+        return bool(self.publish_remote or self.publish_cloudflare)
 
     @property
     def inbox(self) -> Path:

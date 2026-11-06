@@ -90,6 +90,17 @@ With `publish_lfs = true` the media go to Git LFS, which GitHub Pages does not s
 branch: the snapshot then carries a GitHub Actions workflow that pulls them and deploys the site
 (Settings, Pages, Source: GitHub Actions). Its LFS objects are cached between deploys.
 
+Instead of (or as well as) a git remote, the site can be deployed to Cloudflare as the static
+assets of a Worker (free plan: up to 20,000 files, 25 MiB each). Only files whose content changed
+are uploaded, so editing one deck sends that deck alone:
+
+```toml
+publish_cloudflare = "my-talks"                   # served at https://my-talks.<account>.workers.dev
+```
+
+It needs Node.js; log in once with `npx wrangler login`. The deploy is refused if the site holds a
+deck that is not public, and dotfiles are left out of it.
+
 Every deck is **private** until you make it public: with publishing on, each deck card in the
 list gets a Private / Public switch (or `opendeck visibility <deck> public|private`). Then:
 
